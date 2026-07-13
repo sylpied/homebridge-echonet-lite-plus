@@ -23,39 +23,39 @@ export class MraRepository{
     }
   }
   device(eoj:string){return this.devices.get(eoj.slice(0,4).toLowerCase());}
+  private candidates(eoj:string,epc:string){return this.device(eoj)?.elProperties.filter(p=>p.epc.toLowerCase()===`0x${epc.toLowerCase()}`)??[];}
   describe(eoj:string,epc:string){
-    const property=this.device(eoj)?.elProperties.find(p=>p.epc.toLowerCase()===`0x${epc.toLowerCase()}`);
+    const property=this.candidates(eoj,epc)[0];
     return property?{name:property.shortName,ja:property.propertyName.ja,en:property.propertyName.en}:undefined;
   }
+  isReadable(eoj:string,epc:string){return this.candidates(eoj,epc).some(p=>p.accessRule.get!=='notApplicable');}
+  isWritable(eoj:string,epc:string){return this.candidates(eoj,epc).some(p=>p.accessRule.set!=='notApplicable');}
   decode(eoj:string,epc:string,raw:string):DecodedProperty|undefined{
-    const property=this.device(eoj)?.elProperties.find(p=>p.epc.toLowerCase()===`0x${epc.toLowerCase()}`);
-    if(!property)return undefined;
-    return {epc,name:property.shortName,value:this.decodeSchema(property.data,raw),raw,readable:property.accessRule.get!=='notApplicable',writable:property.accessRule.set!=='notApplicable',observable:property.accessRule.inf!=='notApplicable'};
+    const candidates=this.candidates(eoj,epc);if(!candidates.length)return undefined;
+    const matched=candidates.map(property=>({property,decoded:this.tryDecodeSchema(property.data,raw)})).find(x=>x.decoded.matched);
+    const property=matched?.property??candidates[0];
+    return {epc,name:property.shortName,value:matched?.decoded.value??raw,raw,readable:candidates.some(p=>p.accessRule.get!=='notApplicable'),writable:candidates.some(p=>p.accessRule.set!=='notApplicable'),observable:candidates.some(p=>p.accessRule.inf!=='notApplicable')};
   }
   encode(eoj:string,propertyName:string,value:unknown):{epc:string;edt:string}|undefined{
-    const property=this.device(eoj)?.elProperties.find(p=>p.shortName===propertyName&&p.accessRule.set!=='notApplicable');
-    if(!property)return undefined;
-    const schema=this.resolve(property.data);
-    for(const state of this.schemasOfType(schema,'state')){const match=state.enum?.find(e=>e.name===String(value));if(match)return {epc:property.epc.slice(2),edt:match.edt.slice(2)};}
-    if(typeof value==='number'&&Number.isFinite(value)){
-      for(const number of this.schemasOfType(schema,'number')){
-        const multiple=number.multiple??1,size=this.sizeOf(number.format),signed=number.format?.startsWith('int')??false;
-        const n=Math.round(value/multiple);
-        if((number.minimum!==undefined&&n<number.minimum)||(number.maximum!==undefined&&n>number.maximum))continue;
-        const min=signed?-(2**(size*8-1)):0,max=signed?2**(size*8-1)-1:2**(size*8)-1;
-        if(n<min||n>max)continue;
-        const encoded=n<0?2**(size*8)+n:n;
-        return {epc:property.epc.slice(2),edt:encoded.toString(16).padStart(size*2,'0')};
+    for(const property of this.device(eoj)?.elProperties.filter(p=>p.shortName===propertyName&&p.accessRule.set!=='notApplicable')??[]){
+      const schema=this.resolve(property.data);
+      for(const state of this.schemasOfType(schema,'state')){const match=state.enum?.find(e=>e.name===String(value));if(match)return {epc:property.epc.slice(2),edt:match.edt.slice(2)};}
+      if(typeof value==='number'&&Number.isFinite(value)){
+        for(const number of this.schemasOfType(schema,'number')){
+          const multiple=number.multiple??1,size=this.sizeOf(number.format),signed=number.format?.startsWith('int')??false;
+          const n=Math.round(value/multiple);
+          if((number.minimum!==undefined&&n<number.minimum)||(number.maximum!==undefined&&n>number.maximum))continue;
+          const min=signed?-(2**(size*8-1)):0,max=signed?2**(size*8-1)-1:2**(size*8)-1;
+          if(n<min||n>max)continue;
+          const encoded=n<0?2**(size*8)+n:n;
+          return {epc:property.epc.slice(2),edt:encoded.toString(16).padStart(size*2,'0')};
+        }
       }
     }
     return undefined;
   }
   private resolve(schema:Schema):Schema{if(schema.$ref)return this.resolve(this.definitions[schema.$ref.split('/').pop()!]??schema);return schema;}
   private schemasOfType(schema:Schema,type:string):Schema[]{schema=this.resolve(schema);return [...(schema.type===type?[schema]:[]),...(schema.oneOf??[]).flatMap(item=>this.schemasOfType(item,type))];}
-  private decodeSchema(schema:Schema,raw:string):unknown{
-    const decoded=this.tryDecodeSchema(schema,raw);
-    return decoded.matched?decoded.value:raw;
-  }
   private tryDecodeSchema(schema:Schema,raw:string):{matched:boolean;value?:unknown}{
     schema=this.resolve(schema);
     if(schema.oneOf){for(const item of schema.oneOf){const decoded=this.tryDecodeSchema(item,raw);if(decoded.matched)return decoded;}return {matched:false};}

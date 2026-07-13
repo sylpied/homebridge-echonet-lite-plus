@@ -20,6 +20,7 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
   private rediscoveryTimer?:NodeJS.Timeout;
   private facilitySyncTimer?:NodeJS.Timeout;
   private deviceCacheTimer?:NodeJS.Timeout;
+  private statePollTimer?:NodeJS.Timeout;
   private lastRediscovery=0;
   private readonly discovered=new Map<string,{id:string;ip:string;eoj:string;name:string;properties:Record<string,{name:string;ja:string;en:string}>}>();
   constructor(log:Logger,private readonly config:EchonetConfig,private readonly api:API){
@@ -29,19 +30,23 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
       if(this.rediscoveryTimer)clearInterval(this.rediscoveryTimer);
       if(this.facilitySyncTimer)clearTimeout(this.facilitySyncTimer);
       if(this.deviceCacheTimer)clearTimeout(this.deviceCacheTimer);
+      if(this.statePollTimer)clearInterval(this.statePollTimer);
       try{EL.release();}catch(error){this.logger.debug(`ECHONET Lite終了処理エラー: ${String(error)}`);}
     });
   }
   configureAccessory(a:PlatformAccessory){
     const id=a.context?.ip&&a.context?.eoj?`${a.context.ip}-${a.context.eoj}`:'';
-    if(id&&(this.config.deviceSettings?.find(x=>x.id===id)?.enabled===false||!this.meterAllowed(a.context.eoj))){this.pendingRemoval.push(a);return;}
+    if(id&&!this.allowed(id,a.context.ip,a.context.eoj)){this.pendingRemoval.push(a);return;}
     this.cached.set(a.UUID,a);
   }
   private async start(){
     try{
+      // The running child bridge has now loaded the saved configuration.
+      // Clearing this marker lets the custom UI safely enable rediscovery.
+      try{fs.rmSync(path.join(this.api.user.storagePath(),'echonet-lite-plus-restart-required'),{force:true});}catch{/* UI marker is optional */}
       if(this.pendingRemoval.length){
         this.api.unregisterPlatformAccessories(PLUGIN_NAME,PLATFORM_NAME,this.pendingRemoval);
-        this.logger.info(`HomeKit互換設定により${this.pendingRemoval.length}台のメーターを非表示にしました`);
+        this.logger.info(`設定により${this.pendingRemoval.length}台をHomeKitから除外しました`);
         this.pendingRemoval.length=0;
       }
       this.logger.info('ECHONET Lite直接通信を開始します（UDP/3610）');
@@ -55,6 +60,7 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
       for(const ip of this.config.knownDeviceIps??[]) EL.sendOPC1(ip,'05ff01','0ef001',EL.GET,'d6','');
       if(this.config.autoDiscovery!==false){this.logger.info('ECHONET Lite機器を探索しています');EL.search();}
       this.watchRediscoveryRequests();
+      this.startStatePolling();
     }catch(e){this.logger.error(`ECHONET Liteの初期化に失敗しました: ${String(e)}`);}
   }
   private watchRediscoveryRequests(){
@@ -72,6 +78,24 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     for(const ip of this.config.knownDeviceIps??[])EL.sendOPC1(ip,'05ff01','0ef001',EL.GET,'d6','');
     EL.search();
     this.scheduleFacilitySync();
+  }
+  private startStatePolling(){
+    const seconds=Number(this.config.pollInterval??60);
+    if(!Number.isFinite(seconds)||seconds<=0)return;
+    const interval=Math.max(30,seconds);
+    this.logger.info(`ECHONET Lite機器の状態を${interval}秒間隔で更新します`);
+    this.statePollTimer=setInterval(()=>this.pollDeviceStates(),interval*1000);
+  }
+  private pollDeviceStates(){
+    for(const device of this.discovered.values()){
+      if(!this.allowed(device.id,device.ip,device.eoj))continue;
+      const selected=this.config.deviceSettings?.find(x=>x.id===device.id)?.properties;
+      const epcs=(Array.isArray(selected)?selected:Object.keys(device.properties)).map(epc=>epc.toLowerCase()).filter(epc=>!['9d','9e','9f'].includes(epc)&&this.mra.isReadable(device.eoj,epc));
+      for(let offset=0;offset<epcs.length;offset+=10){
+        const details=epcs.slice(offset,offset+10).map(epc=>({[epc]:''}));
+        if(details.length)try{(EL as any).sendDetails(device.ip,'05ff01',device.eoj,EL.GET,details);}catch(error){this.logger.debug(`状態更新要求の送信に失敗しました: ${device.ip} / ${device.eoj}: ${String(error)}`);}
+      }
+    }
   }
   private receive(r:RInfo,e:ElData){
     // INF/GET_RESは非常に多いため受信電文そのものはdebugに限定する。
@@ -114,7 +138,14 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
   }
   private writeDeviceCache(){
     const file=path.join(this.api.user.storagePath(),'echonet-lite-plus-devices.json'),temporary=`${file}.tmp`;
-    try{fs.writeFileSync(temporary,JSON.stringify({updatedAt:Date.now(),devices:[...this.discovered.values()]}));fs.renameSync(temporary,file);}catch(error){this.logger.debug(`機器一覧の保存に失敗しました: ${String(error)}`);}
+    try{
+      const devices=[...this.discovered.values()],payload={updatedAt:Date.now(),devices};
+      fs.writeFileSync(temporary,JSON.stringify(payload));fs.renameSync(temporary,file);
+      const carriers=[...this.cached.values()];
+      for(const accessory of carriers)accessory.context.echonetDiscoveredDevices=devices;
+      if(carriers.length)this.api.updatePlatformAccessories(carriers);
+      this.logger.info(`検出機器一覧を更新しました: ${this.discovered.size}台`);
+    }catch(error){this.logger.debug(`機器一覧の保存に失敗しました: ${String(error)}`);}
   }
   private selectedDetails(id:string,details:Record<string,string>){
     const selected=this.config.deviceSettings?.find(x=>x.id===id)?.properties;
@@ -143,16 +174,17 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
   private syncFacilities(){
     for(const [ip,objects] of Object.entries(EL.facilities??{}))for(const [eoj,details] of Object.entries(objects)){
       if(eoj.toLowerCase()==='0ef001')continue;
-      const id=`${ip}-${eoj}`;if(!this.allowed(id,ip,eoj))continue;
       this.recordDevice(ip,eoj,details);
+      const id=`${ip}-${eoj}`;if(!this.allowed(id,ip,eoj))continue;
       const a=this.accessory(id,ip,eoj);this.cacheDetectedProperties(a,id);this.apply(a,ip,eoj,this.selectedDetails(id,details));
     }
   }
   private allowed(id:string,ip:string,eoj:string){
     const keys=[id,ip,eoj];
-    return this.meterAllowed(eoj)&&this.config.deviceSettings?.find(x=>x.id===id)?.enabled!==false&&(!this.config.includeDevices?.length||keys.some(k=>this.config.includeDevices!.includes(k)))&&!keys.some(k=>this.config.excludeDevices?.includes(k));
+    return this.supportedClass(eoj)&&this.meterAllowed(eoj)&&this.config.deviceSettings?.find(x=>x.id===id)?.enabled===true&&(!this.config.includeDevices?.length||keys.some(k=>this.config.includeDevices!.includes(k)))&&!keys.some(k=>this.config.excludeDevices?.includes(k));
   }
-  private meterAllowed(eoj:string){const cls=eoj.slice(0,4).toLowerCase();return (this.config.meterDisplayMode??'appleHome')==='extended'||!['0280','0282','0287','0288'].includes(cls);}
+  private supportedClass(eoj:string){return new Set(['0011','0012','0130','0133','0134','0135','0263','026b','026f','0272','0273','0279','027b','027e','0280','0281','0282','0287','0288','0290','0291','02a6','05fd']).has(eoj.slice(0,4).toLowerCase());}
+  private meterAllowed(eoj:string){const cls=eoj.slice(0,4).toLowerCase();return (this.config.meterDisplayMode??'appleHome')==='extended'||!['0279','027e','0280','0282','0287','0288'].includes(cls);}
   private accessory(id:string,ip:string,eoj:string){
     const uuid=this.api.hap.uuid.generate(`echonet-lite:${id}`); let a=this.cached.get(uuid);
     const setting=this.config.deviceSettings?.find(x=>x.id===id);
@@ -174,9 +206,13 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     if(cls==='0011')return a.getService(S.TemperatureSensor)??a.addService(S.TemperatureSensor,name);
     if(cls==='0012')return a.getService(S.HumiditySensor)??a.addService(S.HumiditySensor,name);
     if(cls==='0130')return a.getService(S.HeaterCooler)??a.addService(S.HeaterCooler,name);
-    if(cls==='0133'||cls==='0135')return a.getService(S.Fanv2)??a.addService(S.Fanv2,name);
+    if(cls==='0133'||cls==='0134'||cls==='0135')return a.getService(S.Fanv2)??a.addService(S.Fanv2,name);
+    if(cls==='0263')return a.getService(S.WindowCovering)??a.addService(S.WindowCovering,name);
+    if(cls==='026b'||cls==='0272')return a.getServiceById(S.Switch,'automatic-bath')??a.addService(S.Switch,`${name} 風呂自動`,'automatic-bath');
     if(cls==='026f')return a.getService(S.LockMechanism)??a.addService(S.LockMechanism,name);
-    if(cls==='0280'||cls==='0287'||cls==='0288')return this.energyService(a,name);
+    if(cls==='0273')return a.getService(S.Fanv2)??a.addService(S.Fanv2,name);
+    if(cls==='027b')return a.getService(S.Thermostat)??a.addService(S.Thermostat,name);
+    if(cls==='0279'||cls==='027e'||cls==='0280'||cls==='0287'||cls==='0288')return this.energyService(a,name);
     if(cls==='0281'&&(this.config.meterDisplayMode??'appleHome')==='appleHome'){
       const extended=a.services.find(service=>service.UUID==='7A8C3201-3D84-4B4E-9A9E-000000002811');
       if(extended)a.removeService(extended);
@@ -187,7 +223,9 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
       return this.utilityMeterService(a,name,cls);
     }
     if(cls==='0282')return this.utilityMeterService(a,name,cls);
-    return a.getService(S.Switch)??a.addService(S.Switch,name);
+    if(cls==='02a6')return a.getServiceById(S.Switch,'automatic-water-heating')??a.addService(S.Switch,`${name} 自動沸き上げ`,'automatic-water-heating');
+    if(cls==='05fd')return a.getService(S.Switch)??a.addService(S.Switch,name);
+    throw new Error(`HomeKitサービス未対応の機器クラスです: ${cls}`);
   }
   private apply(a:PlatformAccessory,ip:string,eoj:string,d:Record<string,string>){
     const s=this.service(a,eoj),C=this.api.hap.Characteristic,cls=eoj.slice(0,4).toLowerCase();
@@ -214,20 +252,60 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
       if('operationMode'in decoded){const target=mode==='cooling'?C.TargetHeaterCoolerState.COOL:mode==='heating'?C.TargetHeaterCoolerState.HEAT:C.TargetHeaterCoolerState.AUTO;this.writable(s,C.TargetHeaterCoolerState,target,v=>this.setMra(ip,eoj,'operationMode',v===C.TargetHeaterCoolerState.COOL?'cooling':v===C.TargetHeaterCoolerState.HEAT?'heating':'auto'));}
       const current=!on?C.CurrentHeaterCoolerState.INACTIVE:mode==='cooling'?C.CurrentHeaterCoolerState.COOLING:mode==='heating'?C.CurrentHeaterCoolerState.HEATING:C.CurrentHeaterCoolerState.IDLE;
       s.getCharacteristic(C.CurrentHeaterCoolerState).updateValue(current);
-    }else if(cls==='0133'||cls==='0135'){
+    }else if(cls==='0133'||cls==='0134'||cls==='0135'){
       if('operationStatus'in decoded)this.writable(s,C.Active,on?C.Active.ACTIVE:C.Active.INACTIVE,v=>this.setMra(ip,eoj,'operationStatus',String(v===C.Active.ACTIVE)));
+    }else if(cls==='0263'){
+      const degree=Number(decoded.degreeOfOpening);
+      if(Number.isFinite(degree))s.getCharacteristic(C.CurrentPosition).updateValue(this.clamp(degree,0,100));
+      const status=decoded.openCloseStatus;
+      if(status==='fullyOpen'){s.getCharacteristic(C.CurrentPosition).updateValue(100);s.getCharacteristic(C.TargetPosition).updateValue(100);}
+      else if(status==='fullyClosed'){s.getCharacteristic(C.CurrentPosition).updateValue(0);s.getCharacteristic(C.TargetPosition).updateValue(0);}
+      const positionState=status==='opening'?C.PositionState.INCREASING:status==='closing'?C.PositionState.DECREASING:C.PositionState.STOPPED;
+      s.getCharacteristic(C.PositionState).updateValue(positionState);
+      const target=s.getCharacteristic(C.TargetPosition);target.removeOnSet();target.onSet(value=>{
+        const requested=this.clamp(Number(value),0,100);
+        if('degreeOfOpening'in decoded)this.setMra(ip,eoj,'degreeOfOpening',requested);
+        else this.setMra(ip,eoj,'openCloseOperation',requested>Number(s.getCharacteristic(C.CurrentPosition).value??0)?'open':'close');
+      });
+      const hold=s.getCharacteristic(C.HoldPosition);hold.removeOnSet();hold.onSet(value=>{if(Boolean(value))this.setMra(ip,eoj,'openCloseOperation','stop');});
+    }else if(cls==='026b'||cls==='0272'){
+      if('automaticBathOperation'in decoded)this.writable(s,C.On,decoded.automaticBathOperation==='true'||decoded.automaticBathOperation===true,v=>this.setMra(ip,eoj,'automaticBathOperation',String(Boolean(v))));
     }else if(cls==='026f'){
       if('e0'in d){const secured=d['e0'].toLowerCase()==='41';s.getCharacteristic(C.LockCurrentState).updateValue(secured?C.LockCurrentState.SECURED:C.LockCurrentState.UNSECURED);this.writable(s,C.LockTargetState,secured?C.LockTargetState.SECURED:C.LockTargetState.UNSECURED,v=>this.set(ip,eoj,'e0',v===C.LockTargetState.SECURED?'41':'42'));}
-    }else if(cls==='0280'||cls==='0287'||cls==='0288')this.applyEnergy(a,s,cls,d);
+    }else if(cls==='0273'){
+      this.applyBathroomDryer(a,s,ip,eoj,decoded);
+    }else if(cls==='027b'){
+      s.getCharacteristic(C.TargetHeatingCoolingState).setProps({validValues:[C.TargetHeatingCoolingState.OFF,C.TargetHeatingCoolingState.HEAT]});
+      if('operationStatus'in decoded){
+        s.getCharacteristic(C.CurrentHeatingCoolingState).updateValue(on?C.CurrentHeatingCoolingState.HEAT:C.CurrentHeatingCoolingState.OFF);
+        this.writable(s,C.TargetHeatingCoolingState,on?C.TargetHeatingCoolingState.HEAT:C.TargetHeatingCoolingState.OFF,v=>this.setMra(ip,eoj,'operationStatus',String(v!==C.TargetHeatingCoolingState.OFF)));
+      }
+      if(typeof decoded.measuredRoomTemperature==='number')s.getCharacteristic(C.CurrentTemperature).updateValue(decoded.measuredRoomTemperature);
+      else if(typeof decoded.measuredFloorTemperature==='number')s.getCharacteristic(C.CurrentTemperature).updateValue(decoded.measuredFloorTemperature);
+      if(typeof decoded.targetTemperature1==='number')this.writable(s,C.TargetTemperature,decoded.targetTemperature1,v=>this.setMra(ip,eoj,'targetTemperature1',Number(v)));
+      s.getCharacteristic(C.TemperatureDisplayUnits).updateValue(C.TemperatureDisplayUnits.CELSIUS);
+    }else if(cls==='0279')this.applySolar(s,decoded);
+    else if(cls==='027e')this.applyEvCharger(s,decoded);
+    else if(cls==='0280'||cls==='0287'||cls==='0288')this.applyEnergy(a,s,cls,d);
     else if(cls==='0281'||cls==='0282')this.applyUtilityMeter(a,s,cls,d);
     else if(cls==='0011'&&'value'in decoded)s.getCharacteristic(C.CurrentTemperature).updateValue(Number(decoded.value));
     else if(cls==='0012'&&'value'in decoded)s.getCharacteristic(C.CurrentRelativeHumidity).updateValue(this.clamp(Number(decoded.value),0,100));
-    else if('80'in d)this.writable(s,C.On,on,v=>this.set(ip,eoj,'80',v?'30':'31'));
+    else if(cls==='02a6'&&'automaticWaterHeating'in decoded){const enabled=decoded.automaticWaterHeating!=='manualNotHeating';this.writable(s,C.On,enabled,v=>this.setMra(ip,eoj,'automaticWaterHeating',Boolean(v)?'auto':'manualNotHeating'));}
+    else if(cls==='05fd'&&'operationStatus'in decoded)this.writable(s,C.On,on,v=>this.setMra(ip,eoj,'operationStatus',String(Boolean(v))));
   }
   private decodedDetails(eoj:string,d:Record<string,string>){
     return Object.fromEntries(Object.entries(d).filter(([,raw])=>typeof raw==='string'&&raw.length>0&&raw.length%2===0&&/^[0-9a-f]+$/i.test(raw)).map(([epc,raw])=>{const p=this.mra.decode(eoj,epc,raw);return [p?.name??epc,p?.value??raw];}));
   }
   private writable(s:Service,type:any,value:CharacteristicValue,setter:(value:CharacteristicValue)=>void){const c=s.getCharacteristic(type);c.updateValue(value);c.removeOnSet();c.onSet(setter);}
+  private applyBathroomDryer(a:PlatformAccessory,s:Service,ip:string,eoj:string,decoded:Record<string,unknown>){
+    const C=this.api.hap.Characteristic,S=this.api.hap.Service,mode=String(decoded.operationSetting??'stop');
+    this.writable(s,C.Active,mode==='stop'?C.Active.INACTIVE:C.Active.ACTIVE,value=>this.setMra(ip,eoj,'operationSetting',value===C.Active.ACTIVE?'ventilation':'stop'));
+    const modes=[['ventilation','換気'],['prewarming','予備暖房'],['heating','暖房'],['drying','乾燥'],['circulation','涼風']] as const;
+    for(const [value,label] of modes){
+      const service=a.getServiceById(S.Switch,`bathroom-${value}`)??a.addService(S.Switch,`${a.displayName} ${label}`,`bathroom-${value}`);
+      this.writable(service,C.On,mode===value,on=>{if(Boolean(on))this.setMra(ip,eoj,'operationSetting',value);else if(mode===value)this.setMra(ip,eoj,'operationSetting','stop');});
+    }
+  }
   private clamp(value:number,min:number,max:number){return Math.min(max,Math.max(min,value));}
   private hexNumber(v:string){const n=parseInt(v,16);return Number.isFinite(n)?n:0;}
   private signedShort(v:string){const n=this.hexNumber(v.slice(-4));return n>32767?n-65536:n;}
@@ -257,6 +335,16 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     if('e0'in d)this.meterCharacteristic(s,'積算電力量','E863F10C-079E-48FF-8F27-9C2605A29F52','kWh').updateValue(this.hexNumber(d['e0'])*state.coefficient*state.unit);
     // Distribution board: B7 is the channel list of instantaneous power values.
     if(cls==='0287'&&'b7'in d){const values=this.channelValues(d['b7']);const total=values.reduce((sum,v)=>sum+v,0);this.meterCharacteristic(s,'現在の消費電力','E863F10D-079E-48FF-8F27-9C2605A29F52','W').updateValue(total);}
+  }
+  private applySolar(s:Service,decoded:Record<string,unknown>){
+    if(typeof decoded.instantaneousElectricPowerGeneration==='number')this.meterCharacteristic(s,'現在の発電電力','7A8C3279-3D84-4B4E-9A9E-000000000001','W').updateValue(decoded.instantaneousElectricPowerGeneration);
+    if(typeof decoded.cumulativeElectricEnergyOfGeneration==='number')this.meterCharacteristic(s,'積算発電電力量','7A8C3279-3D84-4B4E-9A9E-000000000002','kWh').updateValue(decoded.cumulativeElectricEnergyOfGeneration);
+    if(typeof decoded.cumulativeElectricEnergySold==='number')this.meterCharacteristic(s,'積算売電電力量','7A8C3279-3D84-4B4E-9A9E-000000000003','kWh').updateValue(decoded.cumulativeElectricEnergySold);
+  }
+  private applyEvCharger(s:Service,decoded:Record<string,unknown>){
+    if(typeof decoded.instantaneousElectricPower==='number')this.meterCharacteristic(s,'充放電電力','7A8C327E-3D84-4B4E-9A9E-000000000001','W').updateValue(decoded.instantaneousElectricPower);
+    if(typeof decoded.remainingCapacity1==='number')this.meterCharacteristic(s,'充放電可能残量','7A8C327E-3D84-4B4E-9A9E-000000000002','Wh').updateValue(decoded.remainingCapacity1);
+    if(typeof decoded.usedCapacity1==='number')this.meterCharacteristic(s,'使用電力量','7A8C327E-3D84-4B4E-9A9E-000000000003','Wh').updateValue(decoded.usedCapacity1);
   }
   private signedInt(v:string){const n=this.hexNumber(v.slice(-8));return n>0x7fffffff?n-0x100000000:n;}
   private energyUnit(v:string){return ({'00':1,'01':0.1,'02':0.01,'03':0.001,'04':0.0001,'0a':10,'0b':100,'0c':1000,'0d':10000} as Record<string,number>)[v.slice(-2).toLowerCase()]??1;}
