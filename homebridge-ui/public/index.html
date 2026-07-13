@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="stylesheet" href="style.css?v=0.5.3">
+  <link rel="stylesheet" href="style.css?v=0.7.0">
 </head>
 <body>
   <div class="elsp-shell">
@@ -16,7 +16,7 @@
   <details class="elsp-section" open><summary id="networkTitle"></summary><div class="elsp-section-body elsp-grid">
     <div class="elsp-field check"><input id="autoDiscovery" type="checkbox"><label id="discoveryLabel" for="autoDiscovery"></label></div>
     <div class="elsp-field"><label id="ipsLabel"></label><input id="knownDeviceIps" placeholder="192.168.1.100, 192.168.1.101"><span class="help" id="ipsHelp"></span></div>
-    <div class="elsp-actions"><button id="rediscover" type="button" class="btn btn-outline-primary btn-sm"></button></div>
+    <div class="elsp-actions"><button id="rediscover" type="button" class="btn btn-outline-primary btn-sm"></button><span id="restartRequired" class="help" hidden></span></div>
   </div></details>
   <details class="elsp-section" open><summary id="devicesTitle"></summary><div class="elsp-section-body">
     <p class="help" id="devicesHelp"></p>
@@ -27,59 +27,76 @@
     <div class="elsp-field"><label id="excludeLabel"></label><input id="excludeDevices"></div>
   </div></details>
   <details class="elsp-section"><summary id="loggingTitle"></summary><div class="elsp-section-body elsp-grid">
+    <div class="elsp-field"><label id="pollLabel"></label><select id="pollInterval"><option value="0"></option><option value="30"></option><option value="60"></option><option value="300"></option></select><span class="help" id="pollHelp"></span></div>
     <div class="elsp-field"><label id="logLabel"></label><select id="logLevel"><option value="error">Error</option><option value="warn">Warning</option><option value="info">Info</option><option value="debug">Debug</option></select><span class="help" id="logHelp"></span></div>
   </div></details>
   </div>
   <script>
     const text={
-      en:{intro:'Directly discover ECHONET Lite devices on your LAN. MQTT is not required.',languageLabel:'UI Language',basicTitle:'Basic Settings',networkTitle:'Device Discovery',devicesTitle:'Discovered Devices',devicesHelp:'Choose devices and synchronized properties. HomeKit-required characteristics may remain visible. Restart the child bridge after changing these options.',emptyDevices:'No devices discovered yet. Run device discovery first.',published:'Show in HomeKit',hiddenByMode:'Hidden in Apple Home Compatible mode',displayName:'HomeKit Name',properties:'Synchronized / controllable properties',meterModeLabel:'Meter Display Compatibility',meterModeHelp:'Apple Home hides unsupported meter tiles. Extended mode publishes measurements for apps such as Eve.',meterApple:'Apple Home Compatible (Recommended)',meterExtended:'Extended Apps (Eve)',nameLabel:'Platform Name',networkLabel:'Network Interface',networkHelp:'Optional IPv4 interface address for hosts with multiple adapters.',discoveryLabel:'Enable automatic multicast discovery',ipsLabel:'Known Device IP Addresses',ipsHelp:'Comma-separated addresses for devices that do not respond to multicast.',filterTitle:'Advanced Device Filters',includeLabel:'Include Devices',excludeLabel:'Exclude Devices',filterHelp:'Comma-separated IP addresses, EOJs, or internal IDs. Leave Include empty to add all supported devices.',loggingTitle:'Updates & Logging',logLabel:'Log Level',logHelp:'Info is recommended. Push packets are shown only at Debug level.',rediscover:'Re-discover Devices',restartNotice:'Discovery request accepted. The device list will refresh shortly.'},
-      ja:{intro:'LAN内のECHONET Lite機器を直接探索します。MQTTは不要です。',languageLabel:'UI言語',basicTitle:'基本設定',networkTitle:'機器探索',devicesTitle:'検出された機器',devicesHelp:'HomeKitへ表示する機器と同期・操作する項目を選択します。HomeKit必須項目は表示に残る場合があります。変更後はChild Bridgeを再起動してください。',emptyDevices:'機器はまだ検出されていません。先に機器を再探索してください。',published:'HomeKitに表示',hiddenByMode:'Appleホーム互換モードでは非表示',displayName:'HomeKit表示名',properties:'同期・操作する項目',meterModeLabel:'メーター表示互換性',meterModeHelp:'Appleホーム互換では非対応タイルを隠します。拡張モードはEveなどへ測定値を公開します。',meterApple:'Appleホーム互換（推奨）',meterExtended:'拡張アプリ（Eve）',nameLabel:'プラットフォーム名',networkLabel:'使用ネットワーク',networkHelp:'複数NIC環境で使用するIPv4インターフェースアドレスを指定します。',discoveryLabel:'マルチキャストによる自動探索を有効にする',ipsLabel:'既知の機器IP',ipsHelp:'自動探索へ応答しない機器をカンマ区切りで指定します。',filterTitle:'高度な機器フィルター',includeLabel:'追加する機器',excludeLabel:'除外する機器',filterHelp:'IP、EOJ、内部IDをカンマ区切りで指定します。追加欄が空なら対応機器をすべて追加します。',loggingTitle:'更新とログ',logLabel:'ログレベル',logHelp:'通常はInfoを推奨します。push電文はDebugでのみ表示します。',rediscover:'機器を再探索',restartNotice:'再探索要求を受け付けました。機器一覧はしばらくすると更新されます。'}
+      en:{intro:'Directly discover ECHONET Lite devices on your LAN. MQTT is not required.',languageLabel:'UI Language',basicTitle:'Basic Settings',networkTitle:'Device Discovery',devicesTitle:'Discovered Devices',devicesHelp:'New devices are off by default. Enable only the devices to publish to HomeKit, then save and restart the child bridge.',emptyDevices:'No devices discovered yet. Run device discovery first.',published:'Show in HomeKit',hiddenByMode:'Hidden in Apple Home Compatible mode',displayName:'HomeKit Name',properties:'Synchronized / controllable properties',meterModeLabel:'Meter Display Compatibility',meterModeHelp:'Apple Home hides unsupported meter tiles. Extended mode publishes measurements for apps such as Eve. Save and restart the child bridge after changing this mode.',meterApple:'Apple Home Compatible (Recommended)',meterExtended:'Extended Apps (Eve)',nameLabel:'Platform Name',networkLabel:'Network Interface',networkHelp:'Optional IPv4 interface address for hosts with multiple adapters.',discoveryLabel:'Enable automatic multicast discovery',ipsLabel:'Known Device IP Addresses',ipsHelp:'Comma-separated addresses for devices that do not respond to multicast.',filterTitle:'Advanced Device Filters',includeLabel:'Include Devices',excludeLabel:'Exclude Devices',filterHelp:'Optional comma-separated filter by IP address, EOJ, or internal ID. Devices must also be enabled above.',loggingTitle:'Updates & Logging',pollLabel:'State Update Interval',pollHelp:'Periodically requests selected readable properties from devices that do not send notifications.',pollOptions:['Off','30 seconds','60 seconds (Recommended)','5 minutes'],logLabel:'Log Level',logHelp:'Info is recommended. Push packets are shown only at Debug level.',rediscover:'Re-discover Devices',restartNotice:'Discovery request accepted. The device list will refresh shortly.',restartRequired:'Save the settings and restart the child bridge before rediscovery.',restartRequiredToast:'Settings have changed. Save and restart the child bridge before rediscovery.'},
+      ja:{intro:'LAN内のECHONET Lite機器を直接探索します。MQTTは不要です。',languageLabel:'UI言語',basicTitle:'基本設定',networkTitle:'機器探索',devicesTitle:'検出された機器',devicesHelp:'新しく検出した機器は初期状態でOFFです。HomeKitへ追加する機器だけをONにし、設定を保存してChild Bridgeを再起動してください。',emptyDevices:'機器はまだ検出されていません。先に機器を再探索してください。',published:'HomeKitに表示',hiddenByMode:'Appleホーム互換モードでは非表示',displayName:'HomeKit表示名',properties:'同期・操作する項目',meterModeLabel:'メーター表示互換性',meterModeHelp:'Appleホーム互換では非対応タイルを隠します。拡張モードはEveなどへ測定値を公開します。変更後は設定を保存してChild Bridgeを再起動してください。',meterApple:'Appleホーム互換（推奨）',meterExtended:'拡張アプリ（Eve）',nameLabel:'プラットフォーム名',networkLabel:'使用ネットワーク',networkHelp:'複数NIC環境で使用するIPv4インターフェースアドレスを指定します。',discoveryLabel:'マルチキャストによる自動探索を有効にする',ipsLabel:'既知の機器IP',ipsHelp:'自動探索へ応答しない機器をカンマ区切りで指定します。',filterTitle:'高度な機器フィルター',includeLabel:'追加する機器',excludeLabel:'除外する機器',filterHelp:'IP、EOJ、内部IDによる追加フィルターです。上の検出機器も個別にONにしてください。',loggingTitle:'更新とログ',pollLabel:'状態更新間隔',pollHelp:'通知を送らない機器から、選択した読取可能項目を定期取得します。',pollOptions:['無効','30秒','60秒（推奨）','5分'],logLabel:'ログレベル',logHelp:'通常はInfoを推奨します。push電文はDebugでのみ表示します。',rediscover:'機器を再探索',restartNotice:'再探索要求を受け付けました。機器一覧はしばらくすると更新されます。',restartRequired:'設定を保存してChild Bridgeを再起動してから再探索してください。',restartRequiredToast:'設定が変更されています。保存してChild Bridgeを再起動してから再探索してください。'}
     };
-    const ids=['intro','languageLabel','basicTitle','networkTitle','devicesTitle','devicesHelp','nameLabel','networkLabel','networkHelp','meterModeLabel','meterModeHelp','discoveryLabel','ipsLabel','ipsHelp','filterTitle','includeLabel','excludeLabel','filterHelp','loggingTitle','logLabel','logHelp','rediscover'];
+    text.en.notSupported='Detected (HomeKit mapping not supported yet)';
+    text.ja.notSupported='検出済み（HomeKit割り当て未対応）';
+    const ids=['intro','languageLabel','basicTitle','networkTitle','devicesTitle','devicesHelp','nameLabel','networkLabel','networkHelp','meterModeLabel','meterModeHelp','discoveryLabel','ipsLabel','ipsHelp','filterTitle','includeLabel','excludeLabel','filterHelp','loggingTitle','pollLabel','pollHelp','logLabel','logHelp','rediscover'];
     const effective=()=>language.value==='auto'?(navigator.language.toLowerCase().startsWith('ja')?'ja':'en'):language.value;
-    function render(){const t=text[effective()];ids.forEach(id=>document.getElementById(id).textContent=t[id]);meterDisplayMode.options[0].textContent=t.meterApple;meterDisplayMode.options[1].textContent=t.meterExtended;if(discoveredDevices.length)renderDevices();homebridge.fixScrollHeight?.();}
+    function render(){const t=text[effective()];ids.forEach(id=>document.getElementById(id).textContent=t[id]);meterDisplayMode.options[0].textContent=t.meterApple;meterDisplayMode.options[1].textContent=t.meterExtended;[...pollInterval.options].forEach((option,index)=>option.textContent=t.pollOptions[index]);restartRequired.textContent=t.restartRequired;restartRequired.hidden=!needsRestart;if(discoveredDevices.length)renderDevices();homebridge.fixScrollHeight?.();}
     const array=v=>v.split(',').map(x=>x.trim()).filter(Boolean);
-    const defaults={platform:'ECHONETLitePlus',name:'ECHONET Lite',language:'auto',autoDiscovery:true,knownDeviceIps:[],includeDevices:[],excludeDevices:[],deviceSettings:[],meterDisplayMode:'appleHome',logLevel:'info'};
+    const request=(route,timeout=3000)=>Promise.race([homebridge.request(route),new Promise((_,reject)=>setTimeout(()=>reject(new Error(`${route} timed out`)),timeout))]);
+    const defaults={platform:'ECHONETLitePlus',name:'ECHONET Lite',language:'auto',autoDiscovery:true,knownDeviceIps:[],includeDevices:[],excludeDevices:[],deviceSettings:[],meterDisplayMode:'appleHome',pollInterval:60,logLevel:'info'};
     let discoveredDevices=[];
     let baseConfig={};
+    let needsRestart=false;
     async function load(){
       const configs=await homebridge.getPluginConfig();
       const missing=configs.length===0;
       const c=missing?{...defaults}:{...defaults,...configs[0]};
       baseConfig={...c};
       if(missing)await homebridge.updatePluginConfig([baseConfig]);
-      language.value=c.language||'auto';name.value=c.name||'ECHONET Lite';targetNetwork.value=c.targetNetwork||'';meterDisplayMode.value=c.meterDisplayMode||'appleHome';autoDiscovery.checked=c.autoDiscovery!==false;knownDeviceIps.value=(c.knownDeviceIps||[]).join(', ');includeDevices.value=(c.includeDevices||[]).join(', ');excludeDevices.value=(c.excludeDevices||[]).join(', ');logLevel.value=c.logLevel||'info';render();homebridge.hideSpinner();loadDevices().catch(e=>{console.error(e);renderDevices();});
+      language.value=c.language||'auto';name.value=c.name||'ECHONET Lite';targetNetwork.value=c.targetNetwork||'';meterDisplayMode.value=c.meterDisplayMode||'appleHome';pollInterval.value=String(c.pollInterval??60);autoDiscovery.checked=c.autoDiscovery!==false;knownDeviceIps.value=(c.knownDeviceIps||[]).join(', ');includeDevices.value=(c.includeDevices||[]).join(', ');excludeDevices.value=(c.excludeDevices||[]).join(', ');logLevel.value=c.logLevel||'info';render();homebridge.hideSpinner();request('/settings-status').then(status=>{needsRestart=Boolean(status?.restartRequired);render();}).catch(e=>console.warn(e));loadDevices().catch(e=>{console.error(e);renderDevices();});
     }
-    language.addEventListener('change',render);
+    language.addEventListener('change',()=>{render();update().catch(e=>homebridge.toast.error(String(e)));});
     meterDisplayMode.addEventListener('change',render);
-    async function config(){return {...baseConfig,platform:'ECHONETLitePlus',name:name.value||'ECHONET Lite',language:language.value,targetNetwork:targetNetwork.value.trim()||undefined,meterDisplayMode:meterDisplayMode.value,autoDiscovery:autoDiscovery.checked,knownDeviceIps:array(knownDeviceIps.value),includeDevices:array(includeDevices.value),excludeDevices:array(excludeDevices.value),deviceSettings:baseConfig.deviceSettings||[],logLevel:logLevel.value};}
+    async function config(){return {...baseConfig,platform:'ECHONETLitePlus',name:name.value||'ECHONET Lite',language:language.value,targetNetwork:targetNetwork.value.trim()||undefined,meterDisplayMode:meterDisplayMode.value,pollInterval:Number(pollInterval.value),autoDiscovery:autoDiscovery.checked,knownDeviceIps:array(knownDeviceIps.value),includeDevices:array(includeDevices.value),excludeDevices:array(excludeDevices.value),deviceSettings:baseConfig.deviceSettings||[],logLevel:logLevel.value};}
     async function update(){baseConfig=await config();await homebridge.updatePluginConfig([baseConfig]);homebridge.fixScrollHeight?.();}
-    let updateTimer;document.body.addEventListener('input',()=>{clearTimeout(updateTimer);updateTimer=setTimeout(()=>update().catch(e=>homebridge.toast.error(String(e))),150);});
+    function markRestartRequired(){if(needsRestart)return;needsRestart=true;render();request('/settings-changed').catch(e=>console.warn(e));}
+    let updateTimer;document.body.addEventListener('input',event=>{if(event.target.id==='language')return;markRestartRequired();clearTimeout(updateTimer);updateTimer=setTimeout(()=>update().catch(e=>homebridge.toast.error(String(e))),150);});
     const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const auxiliaryNames=new Set(['coefficient','unitForCumulativeElectricEnergy']);
     function visibleProperties(device){return Object.entries(device.properties||{}).filter(([,meta])=>!auxiliaryNames.has(typeof meta==='string'?meta:meta.name));}
     function propertyLabel(meta){if(typeof meta==='string')return meta;return meta?.[effective()]||meta?.name||'';}
-    function setting(device){let value=(baseConfig.deviceSettings||[]).find(x=>x.id===device.id);if(!value){value={id:device.id,name:device.name,enabled:true};const keys=visibleProperties(device).map(([epc])=>epc);if(keys.length)value.properties=keys;baseConfig.deviceSettings=[...(baseConfig.deviceSettings||[]),value];}return value;}
-    function hiddenByAppleMode(device){return meterDisplayMode.value==='appleHome'&&['0280','0282','0287','0288'].includes(String(device.eoj).slice(0,4).toLowerCase());}
-    function renderDevices(){const t=text[effective()];deviceList.innerHTML=discoveredDevices.length?discoveredDevices.map((device,index)=>{const value=setting(device),properties=visibleProperties(device),selected=Array.isArray(value.properties)?value.properties:properties.map(([epc])=>epc),hidden=hiddenByAppleMode(device);return `<article class="elsp-device${hidden?' elsp-disabled':''}"><div class="elsp-device-head"><div><strong>${esc(device.name)}</strong><div class="help">${esc(device.ip)} · ${esc(device.eoj)}</div></div><label class="elsp-toggle"><input type="checkbox" data-device="${index}" data-role="enabled" ${value.enabled!==false?'checked':''} ${hidden?'disabled':''}> ${hidden?t.hiddenByMode:t.published}</label></div><label>${t.displayName}<input data-device="${index}" data-role="name" value="${esc(value.name||device.name)}"></label>${properties.length?`<fieldset><legend>${t.properties}</legend><div class="elsp-properties">${properties.map(([epc,meta])=>`<label><input type="checkbox" data-device="${index}" data-property="${esc(epc)}" ${selected.includes(epc)?'checked':''}> ${esc(propertyLabel(meta))} <small>EPC ${esc(epc.toUpperCase())}</small></label>`).join('')}</div></fieldset>`:''}</article>`}).join(''):`<p class="help">${t.emptyDevices}</p>`;homebridge.fixScrollHeight?.();}
-    async function loadDevices(){
-      let result={devices:[]};
-      try{result=await Promise.race([homebridge.request('/devices'),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Device list request timed out')),4000))]);}catch(error){console.warn(error);}
-      discoveredDevices=Array.isArray(result?.devices)?result.devices:[];
-      if(!discoveredDevices.length){
-        const cached=await homebridge.getCachedAccessories().catch(()=>[]);
-        discoveredDevices=(cached||[]).filter(a=>a.context?.ip&&a.context?.eoj).map(a=>({id:`${a.context.ip}-${a.context.eoj}`,ip:a.context.ip,eoj:a.context.eoj,name:a.displayName||a.context.eoj,properties:a.context.detectedProperties||{}}));
-      }
+    function setting(device){let value=(baseConfig.deviceSettings||[]).find(x=>x.id===device.id);if(!value){value={id:device.id,name:device.name,enabled:false};const keys=visibleProperties(device).map(([epc])=>epc);if(keys.length)value.properties=keys;baseConfig.deviceSettings=[...(baseConfig.deviceSettings||[]),value];}return value;}
+    function hiddenByAppleMode(device){return meterDisplayMode.value==='appleHome'&&['0279','027e','0280','0282','0287','0288'].includes(String(device.eoj).slice(0,4).toLowerCase());}
+    function homeKitSupported(device){return ['0011','0012','0130','0133','0134','0135','0263','026b','026f','0272','0273','0279','027b','027e','0280','0281','0282','0287','0288','0290','0291','02a6','05fd'].includes(String(device.eoj).slice(0,4).toLowerCase());}
+    function renderDevices(){const t=text[effective()];deviceList.innerHTML=discoveredDevices.length?discoveredDevices.map((device,index)=>{const value=setting(device),properties=visibleProperties(device),selected=Array.isArray(value.properties)?value.properties:properties.map(([epc])=>epc),hidden=hiddenByAppleMode(device),supported=homeKitSupported(device),disabled=hidden||!supported,status=!supported?t.notSupported:hidden?t.hiddenByMode:t.published;return `<article class="elsp-device${disabled?' elsp-disabled':''}"><div class="elsp-device-head"><div><strong>${esc(device.name)}</strong><div class="help">${esc(device.ip)} · ${esc(device.eoj)}</div></div><label class="elsp-toggle"><input type="checkbox" data-device="${index}" data-role="enabled" ${value.enabled===true?'checked':''} ${disabled?'disabled':''}> ${status}</label></div><label>${t.displayName}<input data-device="${index}" data-role="name" value="${esc(value.name||device.name)}"></label>${properties.length?`<fieldset><legend>${t.properties}</legend><div class="elsp-properties">${properties.map(([epc,meta])=>`<label><input type="checkbox" data-device="${index}" data-property="${esc(epc)}" ${selected.includes(epc)?'checked':''}> ${esc(propertyLabel(meta))} <small>EPC ${esc(epc.toUpperCase())}</small></label>`).join('')}</div></fieldset>`:''}</article>`}).join(''):`<p class="help">${t.emptyDevices}</p>`;homebridge.fixScrollHeight?.();}
+    async function mergeDevices(liveDevices=[]){
+      const configured=(baseConfig.deviceSettings||[]).map(setting=>{const match=String(setting.id||'').match(/^(.*)-([0-9a-f]{6})$/i);return match?{id:setting.id,ip:match[1],eoj:match[2],name:setting.name||match[2],properties:{}}:null;}).filter(Boolean);
+      const cached=await homebridge.getCachedAccessories().catch(()=>[]);
+      const cachedDevices=(cached||[]).filter(a=>a.context?.ip&&a.context?.eoj).map(a=>({id:`${a.context.ip}-${a.context.eoj}`,ip:a.context.ip,eoj:a.context.eoj,name:a.displayName||a.context.eoj,properties:a.context.detectedProperties||{}}));
+      const cachedDiscovery=(cached||[]).flatMap(a=>Array.isArray(a.context?.echonetDiscoveredDevices)?a.context.echonetDiscoveredDevices:[]);
+      const merged=new Map();
+      for(const device of [...configured,...cachedDevices,...cachedDiscovery,...(Array.isArray(liveDevices)?liveDevices:[])])merged.set(device.id,{...(merged.get(device.id)||{}),...device,properties:{...(merged.get(device.id)?.properties||{}),...(device.properties||{})}});
+      discoveredDevices=[...merged.values()];
       renderDevices();
+    }
+    async function loadDevices(retry=true){
+      let result;
+      try{result=await request('/devices',4000);}catch(error){console.warn(error);if(retry)setTimeout(()=>loadDevices(false).catch(e=>console.warn(e)),5000);}
+      const liveDevices=Array.isArray(result)?result:Array.isArray(result?.devices)?result.devices:Array.isArray(result?.data?.devices)?result.data.devices:[];
+      await mergeDevices(liveDevices);
     }
     deviceList.addEventListener('change',event=>{const input=event.target,index=Number(input.dataset.device),device=discoveredDevices[index];if(!device)return;const value=setting(device);if(input.dataset.role==='enabled')value.enabled=input.checked;else if(input.dataset.role==='name')value.name=input.value;else if(input.dataset.property){value.properties=value.properties||[];value.properties=input.checked?[...new Set([...value.properties,input.dataset.property])]:value.properties.filter(x=>x!==input.dataset.property);}update().catch(e=>homebridge.toast.error(String(e)));});
     rediscover.addEventListener('click',async()=>{
+      if(needsRestart){homebridge.toast.error(text[effective()].restartRequiredToast);return;}
       try{await update();}catch(e){homebridge.toast.error(String(e));return;}
       homebridge.request('/rediscover')
-        .then(async()=>{homebridge.toast.success(text[effective()].restartNotice);setTimeout(()=>loadDevices().catch(e=>homebridge.toast.error(String(e))),6500);})
+        .then(async result=>{if(result?.restartRequired){needsRestart=true;render();homebridge.toast.error(text[effective()].restartRequiredToast);return;}homebridge.toast.success(text[effective()].restartNotice);setTimeout(()=>loadDevices().catch(e=>homebridge.toast.error(String(e))),6500);})
         .catch(e=>homebridge.toast.error(String(e)));
+      setTimeout(()=>loadDevices(false).catch(e=>console.warn(e)),6500);
       homebridge.toast.info(text[effective()].restartNotice);
     });
+    homebridge.addEventListener('echonet-devices',event=>mergeDevices(event.data?.devices).catch(e=>console.warn(e)));
+    homebridge.addEventListener('echonet-settings-status',event=>{needsRestart=Boolean(event.data?.restartRequired);render();});
     homebridge.showSpinner();load().catch(e=>{homebridge.hideSpinner();render();renderDevices();homebridge.toast.error(String(e));});
   </script>
 </body>
