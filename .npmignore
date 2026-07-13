@@ -1,0 +1,9 @@
+node_modules/
+work/
+outputs/
+src/
+!homebridge-ui/
+!homebridge-ui/**
+*.log
+.git/
+.github/

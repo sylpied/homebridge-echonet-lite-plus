@@ -1,0 +1,54 @@
+{
+  "name": "homebridge-echonet-lite-plus",
+  "version": "0.5.6",
+  "description": "Expose ECHONET Lite devices directly to HomeKit",
+  "author": "ECHONET Lite Plus contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/sylpied/homebridge-echonet-lite-plus#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sylpied/homebridge-echonet-lite-plus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sylpied/homebridge-echonet-lite-plus/issues"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "homebridge-ui",
+    "config.schema.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "work/MRA_v1.4.0.zip"
+  ],
+  "keywords": [
+    "homebridge-plugin",
+    "echonet-lite",
+    "homekit",
+    "hems"
+  ],
+  "engines": {
+    "node": ">=18",
+    "homebridge": ">=1.6.0"
+  },
+  "scripts": {
+    "build": "rimraf dist && tsc",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "@homebridge/plugin-ui-utils": "^2.0.2",
+    "adm-zip": "^0.5.16",
+    "echonet-lite": "^2.19.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.15.3",
+    "homebridge": "^1.11.0",
+    "jest": "^29.7.0",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.3.2",
+    "typescript": "^5.8.3"
+  }
+}

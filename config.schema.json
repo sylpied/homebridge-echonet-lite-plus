@@ -1,0 +1,35 @@
+{
+  "pluginAlias": "ECHONETLitePlus",
+  "pluginType": "platform",
+  "singular": true,
+  "customUi": true,
+  "customUiPath": "./homebridge-ui",
+  "headerDisplay": "## ECHONET Lite Plus\nDirectly discovers ECHONET Lite devices on your LAN and exposes them to HomeKit. MQTT is not required.  \nLAN内のECHONET Lite機器を直接探索し、HomeKitへ追加します。MQTTは不要です。",
+  "footerDisplay": "Set **Log Level / ログレベル** to Debug only while troubleshooting, then return it to Info.  \n問題調査時だけDebugへ変更し、確認後はInfoへ戻してください。",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": { "title": "Platform Name / プラットフォーム名", "type": "string", "default": "ECHONET Lite", "required": true },
+      "targetNetwork": { "title": "Network Interface / 使用ネットワーク", "description": "Optional IPv4 interface address for hosts with multiple adapters. / 複数NIC環境で使用するIPv4インターフェースアドレス。", "type": "string", "placeholder": "192.168.1.10" },
+      "autoDiscovery": { "title": "Automatic Discovery / 自動探索", "description": "Discover devices using ECHONET Lite multicast. / マルチキャストで機器を探索します。", "type": "boolean", "default": true },
+      "knownDeviceIps": { "title": "Known Device IP Addresses / 既知の機器IP", "description": "Devices that do not respond to multicast discovery. / 自動探索へ応答しない機器を直接探索します。", "type": "array", "uniqueItems": true, "default": [], "items": { "title": "IP Address / IPアドレス", "type": "string", "placeholder": "192.168.1.100" } },
+      "includeDevices": { "title": "Include Devices / 追加する機器", "description": "Leave empty to include every supported device. Specify an IP, EOJ, or internal ID. / 空欄なら対応機器をすべて追加します。IP、EOJ、内部IDを指定できます。", "type": "array", "uniqueItems": true, "default": [], "items": { "title": "Device / 機器", "type": "string" } },
+      "excludeDevices": { "title": "Exclude Devices / 除外する機器", "description": "Specify an IP, EOJ, or internal ID. / IP、EOJ、内部IDを指定します。", "type": "array", "uniqueItems": true, "default": [], "items": { "title": "Device / 機器", "type": "string" } },
+      "deviceSettings": { "title": "Discovered Device Settings / 検出機器設定", "type": "array", "default": [], "items": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "enabled": { "type": "boolean", "default": true }, "properties": { "type": "array", "items": { "type": "string" } } }, "required": ["id"] } },
+      "meterDisplayMode": { "title": "Meter Display / メーター表示", "type": "string", "default": "appleHome", "oneOf": [{"title":"Apple Home Compatible / Appleホーム互換","enum":["appleHome"]},{"title":"Extended Apps (Eve) / 拡張アプリ（Eve）","enum":["extended"]}] },
+      "logLevel": { "title": "Log Level / ログレベル", "description": "Push packets are shown only at Debug level. Info is recommended. / push電文はDebugでのみ表示します。通常はInfoを推奨します。", "type": "string", "default": "info", "oneOf": [
+        { "title": "Error / エラーのみ", "enum": ["error"] },
+        { "title": "Warning / 警告以上", "enum": ["warn"] },
+        { "title": "Info (Recommended) / 通常（推奨）", "enum": ["info"] },
+        { "title": "Debug / デバッグ（全push表示）", "enum": ["debug"] }
+      ] }
+    },
+    "required": ["name"]
+  },
+  "layout": [
+    { "key": "name" },
+    { "type": "fieldset", "title": "Network & Discovery / ネットワークと探索", "expandable": true, "expanded": true, "items": ["targetNetwork", "autoDiscovery", "knownDeviceIps", "meterDisplayMode"] },
+    { "type": "fieldset", "title": "Device Filters / 機器フィルター", "expandable": true, "expanded": false, "items": ["includeDevices", "excludeDevices"] },
+    { "type": "fieldset", "title": "Logging / ログ", "expandable": true, "expanded": false, "items": ["logLevel"] }
+  ]
+}
