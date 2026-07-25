@@ -6,7 +6,7 @@ LAN内の ECHONET Lite 機器と直接通信し、HomeKit に公開するHomebri
 
 ECHONET ConsortiumのMachine Readable Appendix Version 1.4.0を同梱し、EPCの名称、アクセス規則、数値型、符号、倍率、状態enumの読書きをMRAから解決します。HomeKitサービスへの割当ては、MRAで変換したプロパティ名を使用します。
 
-MRAはECHONET Consortiumが公開する参考データです。本プラグインのMITライセンスはMRA自体の著作権や利用条件を変更するものではありません。
+MRAデータの著作権はエコーネットコンソーシアムに帰属します。出典およびライセンス適用範囲の詳細は、同梱の[NOTICE-MRA.md](NOTICE-MRA.md)を参照してください。本プラグインのMITライセンスはMRAデータの著作権、ライセンスその他の条件を変更するものではありません。
 
 ## 動作要件とインストール
 
@@ -21,6 +21,19 @@ npm install -g homebridge-echonet-lite-plus
 ```
 
 インストール後、プラグイン設定を開いて対象ネットワークを確認し、Child Bridgeを再起動してください。既存バージョンから更新する場合も設定は引き継がれます。
+
+## Engine Plusとの排他的利用
+
+本パッケージは、ECHONET Liteの探索・通信からHomeKit公開までを単独で行うStandalone版です。
+
+別パッケージの`homebridge-echonet-lite-engine-plus`は、ECHONET Lite通信を共有Engineへ集約してメーカー別プラグイン等へ配信する構成です。両パッケージは同じ役割のECHONET Lite通信部分を持つため、排他的に選択してください。
+
+- 同一Homebridgeホストで両方を同時に有効化しないでください。
+- Standalone版を使用する場合は、Engine Plusおよびそれを利用する構成を無効化してください。
+- Engine Plus構成へ移行する場合は、本Standalone版を停止してからEngine Plusを有効化してください。
+- 両方を同時に動かすと、UDP/3610の待受け、機器探索、状態取得、操作要求が競合する可能性があります。
+
+This package is the standalone implementation. It is mutually exclusive with `homebridge-echonet-lite-engine-plus`; do not enable both on the same Homebridge host.
 
 ## 対応方針
 
