@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2
+
+- Clarified how HEMS commonly uses ECHONET Lite and why some HEMS-compatible devices may be discoverable by this plugin.
+- Documented that standard ECHONET Lite air-conditioner temperature control uses 1°C steps, while manufacturer-specific local APIs may support 0.5°C.
+- Rejected fractional numeric writes that an ECHONET property schema cannot represent instead of silently rounding them.
+
 ## 0.7.1
 
 - Added a bilingual `NOTICE-MRA.md` identifying the ECHONET Consortium as the copyright holder and documenting the source of the bundled MRA data.

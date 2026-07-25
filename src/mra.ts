@@ -43,7 +43,12 @@ export class MraRepository{
       if(typeof value==='number'&&Number.isFinite(value)){
         for(const number of this.schemasOfType(schema,'number')){
           const multiple=number.multiple??1,size=this.sizeOf(number.format),signed=number.format?.startsWith('int')??false;
-          const n=Math.round(value/multiple);
+          const scaled=value/multiple;
+          // Do not silently round a value that the ECHONET schema cannot
+          // represent. For example, the standard air-conditioner B3 property
+          // is an integer Celsius value, so 25.5°C must not become 26°C.
+          if(!Number.isInteger(scaled))continue;
+          const n=scaled;
           if((number.minimum!==undefined&&n<number.minimum)||(number.maximum!==undefined&&n>number.maximum))continue;
           const min=signed?-(2**(size*8-1)):0,max=signed?2**(size*8-1)-1:2**(size*8)-1;
           if(n<min||n>max)continue;
