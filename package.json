@@ -1,7 +1,7 @@
 {
   "name": "homebridge-echonet-lite-plus",
-  "version": "0.7.0",
-  "description": "Expose ECHONET Lite devices directly to HomeKit",
+  "version": "0.7.1",
+  "description": "Standalone Homebridge plugin for ECHONET Lite devices",
   "author": "ECHONET Lite Plus contributors",
   "license": "MIT",
   "homepage": "https://github.com/sylpied/homebridge-echonet-lite-plus#readme",
@@ -20,6 +20,7 @@
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
+    "NOTICE-MRA.md",
     "work/MRA_v1.4.0.zip"
   ],
   "keywords": [

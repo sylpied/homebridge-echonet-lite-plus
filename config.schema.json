@@ -4,7 +4,7 @@
   "singular": true,
   "customUi": true,
   "customUiPath": "./homebridge-ui",
-  "headerDisplay": "## ECHONET Lite Plus\nDirectly discovers ECHONET Lite devices on your LAN and exposes them to HomeKit. MQTT is not required.  \nLAN内のECHONET Lite機器を直接探索し、HomeKitへ追加します。MQTTは不要です。",
+  "headerDisplay": "## ECHONET Lite Plus\nDirectly discovers ECHONET Lite devices on your LAN and exposes them to HomeKit. MQTT is not required. Do not enable this standalone plugin together with Homebridge ECHONET Lite Engine Plus on the same Homebridge host.  \nLAN内のECHONET Lite機器を直接探索し、HomeKitへ追加します。MQTTは不要です。本単独版とHomebridge ECHONET Lite Engine Plusは排他的に使用し、同一Homebridge上で同時に有効化しないでください。",
   "footerDisplay": "Set **Log Level / ログレベル** to Debug only while troubleshooting, then return it to Info.  \n問題調査時だけDebugへ変更し、確認後はInfoへ戻してください。",
   "schema": {
     "type": "object",

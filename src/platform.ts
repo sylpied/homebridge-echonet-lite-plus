@@ -161,11 +161,13 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     this.api.updatePlatformAccessories([a]);
   }
   private propertyRequests(map:string){
-    const bytes=map.match(/../g)?.map(v=>parseInt(v,16))??[];
+    if(!/^(?:[0-9a-f]{2})+$/i.test(map))return {};
+    const bytes=map.match(/../g)?.map(v=>Number.parseInt(v,16))??[];
+    if(!bytes.length||bytes.some(Number.isNaN))return {};
     const epcs:string[]=[];
     if(bytes[0]<=15){for(let i=1;i<=bytes[0]&&i<bytes.length;i++)epcs.push(bytes[i].toString(16).padStart(2,'0'));}
     else for(let i=0;i<16;i++)for(let bit=0;bit<8;bit++)if((bytes[i+1]??0)&(1<<bit))epcs.push(((bit+8)*16+i).toString(16));
-    return Object.fromEntries(epcs.filter(epc=>!['d6','9d','9e','9f'].includes(epc)).map(epc=>[epc,'']));
+    return Object.fromEntries([...new Set(epcs.map(epc=>epc.toLowerCase()))].filter(epc=>!['d6','9d','9e','9f'].includes(epc)).map(epc=>[epc,'']));
   }
   private scheduleFacilitySync(){
     if(this.facilitySyncTimer)clearTimeout(this.facilitySyncTimer);

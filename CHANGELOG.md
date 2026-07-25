@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1
+
+- Added a bilingual `NOTICE-MRA.md` identifying the ECHONET Consortium as the copyright holder and documenting the source of the bundled MRA data.
+- Clarified that the plugin's MIT License does not alter the copyright, license, or other terms applicable to the MRA data.
+- Hardened ECHONET Lite property-map parsing against malformed and duplicate EPC entries, based on findings from the separately developed ECHONET Lite engine/core implementation.
+- Documented that this standalone package and Homebridge ECHONET Lite Engine Plus are mutually exclusive and must not be enabled together on the same Homebridge host.
+
 ## 0.7.0
 
 - Kept disabled devices out of Apple Home while retaining the complete discovered-device registry in the settings UI.
