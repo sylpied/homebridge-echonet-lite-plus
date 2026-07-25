@@ -13,6 +13,11 @@ describe('ECHONET Lite property handling',()=>{
     expect(Object.keys(platform.propertyRequests(`1040${'00'.repeat(15)}`))).toEqual(['e0']);
   });
 
+  test('rejects malformed property maps and removes duplicate EPC entries',()=>{
+    expect(platform.propertyRequests('03zz80')).toEqual({});
+    expect(Object.keys(platform.propertyRequests('038080b0'))).toEqual(['80','b0']);
+  });
+
   test('requests energy conversion dependencies with cumulative energy',()=>{
     platform.config={deviceSettings:[{id:'meter',properties:['e0']}]};
     expect(platform.selectedDetails('meter',{d3:'00000001',e0:'00000064',e1:'00',e7:'00000100'})).toEqual({d3:'00000001',e0:'00000064',e1:'00'});
