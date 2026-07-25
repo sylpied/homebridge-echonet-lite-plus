@@ -20,7 +20,7 @@ describe('MRA 1.4.0 conversion',()=>{
     expect(mra.decode('013001','b3','fd')?.value).toBe('undefined');
     expect(mra.encode('013001','targetTemperature',Number.NaN)).toBeUndefined();
     expect(mra.encode('013001','targetTemperature',300)).toBeUndefined();
-    expect(mra.encode('013001','targetTemperature',25.5)).toEqual({epc:'B3',edt:'1a'});
+    expect(mra.encode('013001','targetTemperature',25.5)).toBeUndefined();
   });
   test('exposes access rules',()=>{
     expect(mra.decode('013001','bb','1a')).toMatchObject({name:'roomTemperature',readable:true,writable:false,observable:true});
