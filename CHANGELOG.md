@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- Added opt-in Homebridge 2 Matter publication for device classes with unambiguous standard mappings.
+- Added Matter mappings for air conditioners, floor heating, fans, bathroom heater/dryers, shutters, door locks, lights, temperature/humidity sensors, water-heater automatic functions and JEM-A/HA switches.
+- Kept electrical energy, solar, EV, gas and water measurements out of Matter rather than representing them as unrelated device types.
+- Removed the unnecessary MQTT statement from the custom UI introduction.
+
 ## 0.7.6
 
 - Removed reliance on native browser confirmation dialogs, which can be suppressed inside the Homebridge custom-UI frame and silently prevent deletion.
