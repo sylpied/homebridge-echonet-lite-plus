@@ -1,17 +1,25 @@
 # Changelog
 
-## 0.7.2
+## 0.7.3
 
 - Clarified how HEMS commonly uses ECHONET Lite and why some HEMS-compatible devices may be discoverable by this plugin.
 - Documented that standard ECHONET Lite air-conditioner temperature control uses 1°C steps, while manufacturer-specific local APIs may support 0.5°C.
 - Rejected fractional numeric writes that an ECHONET property schema cannot represent instead of silently rounding them.
+- Corrected cumulative water-meter unit multipliers to match MRA 1.4.0 EPC E1.
+- Prevented undefined or unmeasurable MRA states from being sent to HomeKit as `NaN`.
+- Aligned the declared Node.js versions with the versions supported by Homebridge.
+- Preserved the last air-conditioner Active and mode values across partial ECHONET Lite INF updates.
+
+## 0.7.2
+
+- Added the MRA redistribution notice and clarified the relationship between HEMS and ECHONET Lite.
+- Documented standard ECHONET Lite air-conditioner temperature control in 1°C steps.
 
 ## 0.7.1
 
 - Added a bilingual `NOTICE-MRA.md` identifying the ECHONET Consortium as the copyright holder and documenting the source of the bundled MRA data.
 - Clarified that the plugin's MIT License does not alter the copyright, license, or other terms applicable to the MRA data.
-- Hardened ECHONET Lite property-map parsing against malformed and duplicate EPC entries, based on findings from the separately developed ECHONET Lite engine/core implementation.
-- Documented that this standalone package and Homebridge ECHONET Lite Engine Plus are mutually exclusive and must not be enabled together on the same Homebridge host.
+- Hardened ECHONET Lite property-map parsing against malformed and duplicate EPC entries.
 
 ## 0.7.0
 

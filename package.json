@@ -1,7 +1,7 @@
 {
   "name": "homebridge-echonet-lite-plus",
-  "version": "0.7.2",
-  "description": "Standalone Homebridge plugin for ECHONET Lite devices",
+  "version": "0.7.3",
+  "description": "Homebridge plugin for ECHONET Lite devices",
   "author": "ECHONET Lite Plus contributors",
   "license": "MIT",
   "homepage": "https://github.com/sylpied/homebridge-echonet-lite-plus#readme",
@@ -30,7 +30,7 @@
     "hems"
   ],
   "engines": {
-    "node": ">=18",
+    "node": "^18.15.0 || ^20.7.0 || ^22 || ^24",
     "homebridge": ">=1.6.0"
   },
   "scripts": {

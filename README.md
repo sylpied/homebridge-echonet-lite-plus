@@ -22,7 +22,7 @@ ECHONET Liteの利用先はHEMSだけに限定されません。家電制御、�
 
 ## 動作要件とインストール
 
-- Node.js 18以降
+- Node.js 18.15以降、20.7以降、22、または24（Homebridgeの対応範囲に準拠）
 - Homebridge 1.6以降（Homebridge 2.xを含む）
 - HomebridgeとECHONET Lite機器が同じLANからUDP/3610で通信できること
 
@@ -33,19 +33,6 @@ npm install -g homebridge-echonet-lite-plus
 ```
 
 インストール後、プラグイン設定を開いて対象ネットワークを確認し、Child Bridgeを再起動してください。既存バージョンから更新する場合も設定は引き継がれます。
-
-## Engine Plusとの排他的利用
-
-本パッケージは、ECHONET Liteの探索・通信からHomeKit公開までを単独で行うStandalone版です。
-
-別パッケージの`homebridge-echonet-lite-engine-plus`は、ECHONET Lite通信を共有Engineへ集約してメーカー別プラグイン等へ配信する構成です。両パッケージは同じ役割のECHONET Lite通信部分を持つため、排他的に選択してください。
-
-- 同一Homebridgeホストで両方を同時に有効化しないでください。
-- Standalone版を使用する場合は、Engine Plusおよびそれを利用する構成を無効化してください。
-- Engine Plus構成へ移行する場合は、本Standalone版を停止してからEngine Plusを有効化してください。
-- 両方を同時に動かすと、UDP/3610の待受け、機器探索、状態取得、操作要求が競合する可能性があります。
-
-This package is the standalone implementation. It is mutually exclusive with `homebridge-echonet-lite-engine-plus`; do not enable both on the same Homebridge host.
 
 ## 対応方針
 
@@ -67,18 +54,20 @@ ECHONET Liteの機器クラスとプロパティを、意味が一致するHomeK
 | 電力量計・分電盤・スマートメーター | `0280` / `0287` / `0288` | Eve互換の電力・電流・積算電力量 |
 | 住宅用太陽光発電 | `0279` | 拡張モードで発電電力・積算発電量・積算売電量（読み取り専用） |
 | 電気自動車充放電器 | `027E` | 拡張モードで充放電電力・残量・使用電力量（読み取り専用） |
-| 水流量メーター | `0281` | 積算水道使用量、検針データ異常、標準Leak Sensorによる異常通知 |
+| 水流量メーター | `0281` | 積算水道使用量、検針データ異常。Appleホーム互換モードでは標準Leak Sensorを異常通知の代替表示として使用 |
 | ガスメーター | `0282` | 積算ガス使用量 |
 
 Appleのホームアプリには電力・発電量・EV残量・水道・ガス使用量の標準表示がありません。既定のAppleホーム互換モードでは、意味の異なるタイルへ偽装せず非表示にします。拡張モードでは正しい単位のカスタムCharacteristicとして公開し、Eveなど対応するHomeKitアプリから参照できます。
+
+水流量メーターのEPC `E3`は「検針データ異常」であり、漏水そのものを表すプロパティではありません。Appleホームには汎用の検針異常タイルがないため、Appleホーム互換モードに限りLeak Sensorを異常通知の代替表示として使用します。表示上の「漏水検知」は、実際の漏水を断定するものではありません。
 
 ECHONET Liteとして存在していても、HomeKit上で安全かつ自然に表現できない機器クラスは検出一覧にのみ表示し、対応マッピングを実装するまでHomeKitへは公開しません。
 
 ### エアコンの設定温度単位
 
-本Standalone版は、家庭用エアコンの標準ECHONET Liteプロパティ「温度設定値」（EPC `B3`）に合わせ、設定温度を1℃単位で扱います。EPC `B3`では0.5℃を表現できないため、Appleホーム上で0.5℃単位を選択できるようにしても、その値を標準ECHONET Lite通信でそのまま実機へ送ることはできません。
+本プラグインは、家庭用エアコンの標準ECHONET Liteプロパティ「温度設定値」（EPC `B3`）に合わせ、設定温度を1℃単位で扱います。EPC `B3`では0.5℃を表現できないため、Appleホーム上で0.5℃単位を選択できるようにしても、その値を標準ECHONET Lite通信でそのまま実機へ送ることはできません。
 
-Engine Plus構成のメーカー別プラグインでは、メーカーが提供する対応ローカルAPIなど、0.5℃を表現できる別の操作経路が設定されている場合に限り、0.5℃単位へ対応することがあります。標準ECHONET Lite通信へフォールバックする場合は1℃単位です。
+メーカー独自のローカルAPIなどで0.5℃単位を扱える機器でも、本プラグインは標準ECHONET Lite通信を使用するため1℃単位です。
 
 ## 構成
 
