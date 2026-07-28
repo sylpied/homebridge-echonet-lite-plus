@@ -78,6 +78,20 @@ describe('custom UI server',()=>{
     }finally{child.kill('SIGTERM');fs.rmSync(directory,{recursive:true,force:true});}
   });
 
+  test('normalizes and persists removed device ids',async()=>{
+    const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-ui-remove-case-'));
+    fs.writeFileSync(path.join(directory,'echonet-lite-plus-devices.json'),JSON.stringify({devices:[{id:'192.168.1.2-0130AA'}]}));
+    const child=fork(path.resolve(__dirname,'../homebridge-ui/server.js'),[],{env:{...process.env,HOMEBRIDGE_STORAGE_PATH:directory},silent:true});
+    try{
+      await waitFor(child,message=>message?.action==='ready');
+      const response=waitFor(child,message=>message?.action==='response'&&message?.payload?.requestId==='remove-case');
+      child.send({action:'request',path:'/remove-device',requestId:'remove-case',body:{id:'192.168.1.2-0130AA'}});
+      const result=(await response).payload.data;
+      expect(result.devices).toEqual([]);
+      expect(result.removedIds).toEqual(['192.168.1.2-0130aa']);
+    }finally{child.kill('SIGTERM');fs.rmSync(directory,{recursive:true,force:true});}
+  });
+
   test('returns an empty list without logging an error before the first discovery',async()=>{
     const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-ui-empty-'));
     const child=fork(path.resolve(__dirname,'../homebridge-ui/server.js'),[],{env:{...process.env,HOMEBRIDGE_STORAGE_PATH:directory},silent:true});

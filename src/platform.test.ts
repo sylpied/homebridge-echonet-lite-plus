@@ -134,6 +134,21 @@ describe('ECHONET Lite property handling',()=>{
     }finally{fs.rmSync(directory,{recursive:true,force:true});}
   });
 
+  test('does not cancel an individual history removal when a device responds again',()=>{
+    const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-removed-'));
+    const removedFile=path.join(directory,'echonet-lite-plus-removed-device-ids.json');
+    fs.writeFileSync(removedFile,JSON.stringify(['192.168.100.2-013001']));
+    const instance=Object.create(EchonetLitePlatform.prototype) as any;
+    instance.discovered=new Map();
+    instance.mra={describe:()=>undefined,device:()=>undefined};
+    instance.api={user:{storagePath:()=>directory}};
+    instance.scheduleDeviceCacheWrite=jest.fn();
+    try{
+      instance.recordDevice('192.168.100.2','013001',{b3:'19'});
+      expect(JSON.parse(fs.readFileSync(removedFile,'utf8'))).toEqual(['192.168.100.2-013001']);
+    }finally{fs.rmSync(directory,{recursive:true,force:true});}
+  });
+
   test('keeps the complete discovery file when every HomeKit device is disabled',()=>{
     const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-all-off-'));
     const instance=Object.create(EchonetLitePlatform.prototype) as any;
