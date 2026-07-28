@@ -11,16 +11,21 @@ const path = require('node:path')
       }
       const restartMarker = () => path.join(storagePath(), 'echonet-lite-plus-restart-required')
       const deviceFile = () => path.join(storagePath(), 'echonet-lite-plus-devices.json')
+      const clearedMarker = () => path.join(storagePath(), 'echonet-lite-plus-device-history-cleared')
+      const removedFile = () => path.join(storagePath(), 'echonet-lite-plus-removed-device-ids.json')
+      const readRemovedIds = () => {
+        try { const value = JSON.parse(fs.readFileSync(removedFile(), 'utf8')); return Array.isArray(value) ? value.filter(id => typeof id === 'string') : [] } catch { return [] }
+      }
       const readDevices = () => {
         const file = deviceFile()
         try {
           const result = JSON.parse(fs.readFileSync(file, 'utf8'))
           if (!Array.isArray(result?.devices)) throw new Error('devices is not an array')
-          return result
+          return { ...result, cleared: fs.existsSync(clearedMarker()), removedIds: readRemovedIds() }
         } catch (error) {
-          if (error?.code === 'ENOENT') return { devices: [], updatedAt: 0 }
+          if (error?.code === 'ENOENT') return { devices: [], updatedAt: 0, cleared: fs.existsSync(clearedMarker()), removedIds: readRemovedIds() }
           console.error(`ECHONET Lite device cache could not be read: ${file}: ${String(error)}`)
-          return { devices: [], updatedAt: 0 }
+          return { devices: [], updatedAt: 0, cleared: fs.existsSync(clearedMarker()), removedIds: readRemovedIds() }
         }
       }
       const pushDevices = () => this.pushEvent('echonet-devices', readDevices())
@@ -49,6 +54,26 @@ const path = require('node:path')
         // a stream event. Some Homebridge UI/browser combinations have lost a
         // request response while keeping the custom UI process alive.
         setTimeout(() => this.pushEvent('echonet-devices', result), 0)
+        return result
+      })
+      this.onRequest('/clear-devices', async () => {
+        fs.rmSync(deviceFile(), { force: true })
+        fs.rmSync(removedFile(), { force: true })
+        fs.writeFileSync(clearedMarker(), String(Date.now()))
+        const result = { devices: [], updatedAt: Date.now(), cleared: true }
+        this.pushEvent('echonet-devices', result)
+        return result
+      })
+      this.onRequest('/remove-device', async payload => {
+        const id = typeof payload?.id === 'string' ? payload.id : ''
+        if (!id) throw new Error('A device id is required')
+        const current = readDevices()
+        const devices = current.devices.filter(device => device?.id !== id)
+        fs.writeFileSync(deviceFile(), JSON.stringify({ devices, updatedAt: Date.now() }))
+        const removedIds = [...new Set([...readRemovedIds(), id])]
+        fs.writeFileSync(removedFile(), JSON.stringify(removedIds))
+        const result = { devices, updatedAt: Date.now(), removedIds }
+        this.pushEvent('echonet-devices', result)
         return result
       })
       this.ready()
