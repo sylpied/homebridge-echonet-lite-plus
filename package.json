@@ -1,6 +1,6 @@
 {
   "name": "homebridge-echonet-lite-plus",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Homebridge plugin for ECHONET Lite devices",
   "author": "ECHONET Lite Plus contributors",
   "license": "MIT",

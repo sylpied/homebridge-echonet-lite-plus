@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.5
+
+- Fixed individual device removal being undone by automatic discovery after a child-bridge restart.
+- Removed device cards now disappear immediately and are restored if the deletion request fails.
+- Normalized device identifiers to prevent case differences from restoring removed history entries.
+
 ## 0.7.4
 
 - Added a detected-device history clear action that removes persisted discovery results and per-device choices without allowing Homebridge accessory-cache fallbacks to restore stale devices.
