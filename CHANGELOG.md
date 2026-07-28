@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.6
+
+- Removed reliance on native browser confirmation dialogs, which can be suppressed inside the Homebridge custom-UI frame and silently prevent deletion.
+- Device removal and full history clearing now start immediately; failed requests still restore the previous UI state and show an error.
+
 ## 0.7.5
 
 - Fixed individual device removal being undone by automatic discovery after a child-bridge restart.
