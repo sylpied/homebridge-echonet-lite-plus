@@ -124,6 +124,7 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
   }
   private recordDevice(ip:string,eoj:string,details:Record<string,string>){
     const id=`${ip}-${eoj}`,existing=this.discovered.get(id),current=existing??{id,ip,eoj,name:this.className(eoj),properties:{}};
+    this.restoreRediscoveredDevice(id);
     let changed=!existing;
     for(const epc of Object.keys(details))if(!['9d','9e','9f'].includes(epc.toLowerCase())){
       const description=this.mra.describe(eoj,epc)??{name:epc.toUpperCase(),ja:`EPC ${epc.toUpperCase()}`,en:`EPC ${epc.toUpperCase()}`};
@@ -131,6 +132,15 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     }
     this.discovered.set(id,current);
     if(changed)this.scheduleDeviceCacheWrite();
+  }
+  private restoreRediscoveredDevice(id:string){
+    const file=path.join(this.api.user.storagePath(),'echonet-lite-plus-removed-device-ids.json');
+    try{
+      const ids=JSON.parse(fs.readFileSync(file,'utf8')) as unknown;
+      if(!Array.isArray(ids)||!ids.includes(id))return;
+      const remaining=ids.filter(value=>typeof value==='string'&&value!==id);
+      if(remaining.length)fs.writeFileSync(file,JSON.stringify(remaining));else fs.rmSync(file,{force:true});
+    }catch{/* No individually removed device history. */}
   }
   private scheduleDeviceCacheWrite(){
     if(this.deviceCacheTimer)clearTimeout(this.deviceCacheTimer);
@@ -141,6 +151,7 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     try{
       const devices=[...this.discovered.values()],payload={updatedAt:Date.now(),devices};
       fs.writeFileSync(temporary,JSON.stringify(payload));fs.renameSync(temporary,file);
+      if(devices.length)fs.rmSync(path.join(this.api.user.storagePath(),'echonet-lite-plus-device-history-cleared'),{force:true});
       const carriers=[...this.cached.values()];
       for(const accessory of carriers)accessory.context.echonetDiscoveredDevices=devices;
       if(carriers.length)this.api.updatePlatformAccessories(carriers);

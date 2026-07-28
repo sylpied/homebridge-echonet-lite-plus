@@ -47,6 +47,37 @@ describe('custom UI server',()=>{
     }finally{child.kill('SIGTERM');fs.rmSync(directory,{recursive:true,force:true});}
   });
 
+  test('clears persisted detected-device history',async()=>{
+    const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-ui-clear-'));
+    fs.writeFileSync(path.join(directory,'echonet-lite-plus-devices.json'),JSON.stringify({devices:[{id:'old'}]}));
+    const child=fork(path.resolve(__dirname,'../homebridge-ui/server.js'),[],{env:{...process.env,HOMEBRIDGE_STORAGE_PATH:directory},silent:true});
+    try{
+      await waitFor(child,message=>message?.action==='ready');
+      const response=waitFor(child,message=>message?.action==='response'&&message?.payload?.requestId==='clear');
+      child.send({action:'request',path:'/clear-devices',requestId:'clear',body:{}});
+      const result=(await response).payload.data;
+      expect(result).toMatchObject({devices:[],cleared:true});
+      expect(fs.existsSync(path.join(directory,'echonet-lite-plus-devices.json'))).toBe(false);
+      expect(fs.existsSync(path.join(directory,'echonet-lite-plus-device-history-cleared'))).toBe(true);
+    }finally{child.kill('SIGTERM');fs.rmSync(directory,{recursive:true,force:true});}
+  });
+
+  test('removes one detected device while retaining the others',async()=>{
+    const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-ui-remove-'));
+    fs.writeFileSync(path.join(directory,'echonet-lite-plus-devices.json'),JSON.stringify({devices:[{id:'keep'},{id:'remove'}]}));
+    const child=fork(path.resolve(__dirname,'../homebridge-ui/server.js'),[],{env:{...process.env,HOMEBRIDGE_STORAGE_PATH:directory},silent:true});
+    try{
+      await waitFor(child,message=>message?.action==='ready');
+      const response=waitFor(child,message=>message?.action==='response'&&message?.payload?.requestId==='remove-one');
+      child.send({action:'request',path:'/remove-device',requestId:'remove-one',body:{id:'remove'}});
+      const result=(await response).payload.data;
+      expect(result.devices).toEqual([{id:'keep'}]);
+      expect(result.removedIds).toContain('remove');
+      const saved=JSON.parse(fs.readFileSync(path.join(directory,'echonet-lite-plus-devices.json'),'utf8'));
+      expect(saved.devices).toEqual([{id:'keep'}]);
+    }finally{child.kill('SIGTERM');fs.rmSync(directory,{recursive:true,force:true});}
+  });
+
   test('returns an empty list without logging an error before the first discovery',async()=>{
     const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-ui-empty-'));
     const child=fork(path.resolve(__dirname,'../homebridge-ui/server.js'),[],{env:{...process.env,HOMEBRIDGE_STORAGE_PATH:directory},silent:true});
