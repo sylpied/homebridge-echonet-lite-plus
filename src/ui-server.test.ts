@@ -12,6 +12,12 @@ const waitFor=(child:ChildProcess,predicate:(message:any)=>boolean)=>new Promise
 });
 
 describe('custom UI server',()=>{
+  test('the custom UI does not depend on native confirmation dialogs',()=>{
+    const html=fs.readFileSync(path.resolve(__dirname,'../homebridge-ui/public/index.html'),'utf8');
+    expect(html).not.toContain('window.confirm(');
+    expect(html).toContain("requestWithBody('/remove-device',{id:device.id},4000)");
+  });
+
   test('returns the complete detected-device cache over IPC',async()=>{
     const directory=fs.mkdtempSync(path.join(os.tmpdir(),'echonet-ui-'));
     const devices=Array.from({length:7},(_,index)=>({id:`device-${index}`,ip:'192.168.100.2',eoj:`${index}`.padStart(6,'0'),name:`Device ${index}`,properties:{}}));
