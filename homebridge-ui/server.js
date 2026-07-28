@@ -13,8 +13,9 @@ const path = require('node:path')
       const deviceFile = () => path.join(storagePath(), 'echonet-lite-plus-devices.json')
       const clearedMarker = () => path.join(storagePath(), 'echonet-lite-plus-device-history-cleared')
       const removedFile = () => path.join(storagePath(), 'echonet-lite-plus-removed-device-ids.json')
+      const canonicalId = value => typeof value === 'string' ? value.trim().toLowerCase() : ''
       const readRemovedIds = () => {
-        try { const value = JSON.parse(fs.readFileSync(removedFile(), 'utf8')); return Array.isArray(value) ? value.filter(id => typeof id === 'string') : [] } catch { return [] }
+        try { const value = JSON.parse(fs.readFileSync(removedFile(), 'utf8')); return Array.isArray(value) ? value.map(canonicalId).filter(Boolean) : [] } catch { return [] }
       }
       const readDevices = () => {
         const file = deviceFile()
@@ -65,10 +66,12 @@ const path = require('node:path')
         return result
       })
       this.onRequest('/remove-device', async payload => {
-        const id = typeof payload?.id === 'string' ? payload.id : ''
+        // Accept both the documented direct payload and the wrapped form used
+        // by some Homebridge UI releases.
+        const id = canonicalId(payload?.id ?? payload?.body?.id)
         if (!id) throw new Error('A device id is required')
         const current = readDevices()
-        const devices = current.devices.filter(device => device?.id !== id)
+        const devices = current.devices.filter(device => canonicalId(device?.id) !== id)
         fs.writeFileSync(deviceFile(), JSON.stringify({ devices, updatedAt: Date.now() }))
         const removedIds = [...new Set([...readRemovedIds(), id])]
         fs.writeFileSync(removedFile(), JSON.stringify(removedIds))
