@@ -156,4 +156,24 @@ describe('ECHONET Lite property handling',()=>{
     platform.mra=new MraRepository();
     expect(platform.decodedDetails('013001',{b3:'',bb:'1a'})).toEqual({roomTemperature:26});
   });
+
+  test('does not convert MRA undefined states into NaN HomeKit values',()=>{
+    expect(platform.finiteNumber('undefined')).toBeUndefined();
+    expect(platform.finiteNumber('unmeasurable')).toBeUndefined();
+    expect(platform.finiteNumber(26)).toBe(26);
+  });
+
+  test('uses the MRA 1.4.0 water-meter unit multipliers',()=>{
+    expect(platform.waterUnit('00')).toBe(1);
+    expect(platform.waterUnit('03')).toBe(0.001);
+    expect(platform.waterUnit('06')).toBe(0.000001);
+  });
+
+  test('derives the HomeKit heater/cooler state without treating a partial INF as off',()=>{
+    const C={CurrentHeaterCoolerState:{INACTIVE:0,IDLE:1,HEATING:2,COOLING:3}};
+    expect(platform.currentHeaterCoolerState(true,'cooling',C)).toBe(3);
+    expect(platform.currentHeaterCoolerState(true,'heating',C)).toBe(2);
+    expect(platform.currentHeaterCoolerState(true,'auto',C)).toBe(1);
+    expect(platform.currentHeaterCoolerState(false,'cooling',C)).toBe(0);
+  });
 });

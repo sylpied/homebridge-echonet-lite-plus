@@ -237,12 +237,14 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     const on=decoded.operationStatus===true||decoded.operationStatus==='true';
     if(cls==='0290'||cls==='0291'){
       if('operationStatus'in decoded)this.writable(s,C.On,on,v=>this.setMra(ip,eoj,'operationStatus',String(Boolean(v))));
-      if('lightLevel'in decoded)this.writable(s,C.Brightness,this.clamp(Number(decoded.lightLevel),0,100),v=>this.setMra(ip,eoj,'lightLevel',Number(v)));
+      const lightLevel=this.finiteNumber(decoded.lightLevel);
+      if(lightLevel!==undefined)this.writable(s,C.Brightness,this.clamp(lightLevel,0,100),v=>this.setMra(ip,eoj,'lightLevel',Number(v)));
     }else if(cls==='0130'){
       if('operationStatus'in decoded)this.writable(s,C.Active,on?C.Active.ACTIVE:C.Active.INACTIVE,v=>this.setMra(ip,eoj,'operationStatus',String(v===C.Active.ACTIVE)));
-      if('roomTemperature'in decoded)s.getCharacteristic(C.CurrentTemperature).updateValue(Number(decoded.roomTemperature));
-      if('targetTemperature'in decoded){
-        const temperature=Number(decoded.targetTemperature);
+      const roomTemperature=this.finiteNumber(decoded.roomTemperature);
+      if(roomTemperature!==undefined)s.getCharacteristic(C.CurrentTemperature).updateValue(roomTemperature);
+      const temperature=this.finiteNumber(decoded.targetTemperature);
+      if(temperature!==undefined){
         // ECHONET B3 is a shared target temperature. HomeKit gives its heating
         // and cooling thresholds different defaults, so align both with B3.
         s.getCharacteristic(C.CoolingThresholdTemperature).setProps({minValue:0,maxValue:50,minStep:1});
@@ -252,7 +254,11 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
       }
       const mode=decoded.operationMode;
       if('operationMode'in decoded){const target=mode==='cooling'?C.TargetHeaterCoolerState.COOL:mode==='heating'?C.TargetHeaterCoolerState.HEAT:C.TargetHeaterCoolerState.AUTO;this.writable(s,C.TargetHeaterCoolerState,target,v=>this.setMra(ip,eoj,'operationMode',v===C.TargetHeaterCoolerState.COOL?'cooling':v===C.TargetHeaterCoolerState.HEAT?'heating':'auto'));}
-      const current=!on?C.CurrentHeaterCoolerState.INACTIVE:mode==='cooling'?C.CurrentHeaterCoolerState.COOLING:mode==='heating'?C.CurrentHeaterCoolerState.HEATING:C.CurrentHeaterCoolerState.IDLE;
+      // INF/GET_RES may contain only one EPC. Preserve the last HomeKit Active
+      // and Target state when operation status or mode is absent from this frame.
+      const active='operationStatus'in decoded?on:s.getCharacteristic(C.Active).value===C.Active.ACTIVE;
+      const retainedMode='operationMode'in decoded?mode:s.getCharacteristic(C.TargetHeaterCoolerState).value===C.TargetHeaterCoolerState.COOL?'cooling':s.getCharacteristic(C.TargetHeaterCoolerState).value===C.TargetHeaterCoolerState.HEAT?'heating':'auto';
+      const current=this.currentHeaterCoolerState(active,retainedMode,C);
       s.getCharacteristic(C.CurrentHeaterCoolerState).updateValue(current);
     }else if(cls==='0133'||cls==='0134'||cls==='0135'){
       if('operationStatus'in decoded)this.writable(s,C.Active,on?C.Active.ACTIVE:C.Active.INACTIVE,v=>this.setMra(ip,eoj,'operationStatus',String(v===C.Active.ACTIVE)));
@@ -290,8 +296,11 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     else if(cls==='027e')this.applyEvCharger(s,decoded);
     else if(cls==='0280'||cls==='0287'||cls==='0288')this.applyEnergy(a,s,cls,d);
     else if(cls==='0281'||cls==='0282')this.applyUtilityMeter(a,s,cls,d);
-    else if(cls==='0011'&&'value'in decoded)s.getCharacteristic(C.CurrentTemperature).updateValue(Number(decoded.value));
-    else if(cls==='0012'&&'value'in decoded)s.getCharacteristic(C.CurrentRelativeHumidity).updateValue(this.clamp(Number(decoded.value),0,100));
+    else if(cls==='0011'){
+      const value=this.finiteNumber(decoded.value);if(value!==undefined)s.getCharacteristic(C.CurrentTemperature).updateValue(value);
+    }else if(cls==='0012'){
+      const value=this.finiteNumber(decoded.value);if(value!==undefined)s.getCharacteristic(C.CurrentRelativeHumidity).updateValue(this.clamp(value,0,100));
+    }
     else if(cls==='02a6'&&'automaticWaterHeating'in decoded){const enabled=decoded.automaticWaterHeating!=='manualNotHeating';this.writable(s,C.On,enabled,v=>this.setMra(ip,eoj,'automaticWaterHeating',Boolean(v)?'auto':'manualNotHeating'));}
     else if(cls==='05fd'&&'operationStatus'in decoded)this.writable(s,C.On,on,v=>this.setMra(ip,eoj,'operationStatus',String(Boolean(v))));
   }
@@ -309,6 +318,8 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     }
   }
   private clamp(value:number,min:number,max:number){return Math.min(max,Math.max(min,value));}
+  private finiteNumber(value:unknown){const number=typeof value==='number'?value:Number(value);return Number.isFinite(number)?number:undefined;}
+  private currentHeaterCoolerState(active:boolean,mode:unknown,C:any){return !active?C.CurrentHeaterCoolerState.INACTIVE:mode==='cooling'?C.CurrentHeaterCoolerState.COOLING:mode==='heating'?C.CurrentHeaterCoolerState.HEATING:C.CurrentHeaterCoolerState.IDLE;}
   private hexNumber(v:string){const n=parseInt(v,16);return Number.isFinite(n)?n:0;}
   private signedShort(v:string){const n=this.hexNumber(v.slice(-4));return n>32767?n-65536:n;}
   private energyService(a:PlatformAccessory,name:string):Service{
@@ -364,7 +375,7 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
       }
     }else if('e0'in d)this.meterCharacteristic(s,'積算ガス使用量','7A8C3220-3D84-4B4E-9A9E-000000002821','m³').updateValue(this.hexNumber(d['e0'])*0.001);
   }
-  private waterUnit(v:string){return ({'00':0.001,'01':0.01,'02':0.1,'03':1,'04':10,'05':100,'06':1000} as Record<string,number>)[v.slice(-2).toLowerCase()]??1;}
+  private waterUnit(v:string){return ({'00':1,'01':0.1,'02':0.01,'03':0.001,'04':0.0001,'05':0.00001,'06':0.000001} as Record<string,number>)[v.slice(-2).toLowerCase()]??1;}
   private set(ip:string,eoj:string,epc:string,edt:CharacteristicValue|string){
     this.logger.info(`操作を送信: ${ip} ${eoj} EPC=${epc}`);
     try{EL.sendOPC1(ip,'05ff01',eoj,EL.SETC,epc,String(edt));}catch(error){this.logger.error(`ECHONET Lite操作の送信に失敗しました: ${String(error)}`);}
