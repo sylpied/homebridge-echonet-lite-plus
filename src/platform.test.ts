@@ -44,6 +44,28 @@ describe('ECHONET Lite property handling',()=>{
     expect(platform.supportedClass('02a301')).toBe(false);
   });
 
+  test('publishes only unambiguous Matter device classes',()=>{
+    for(const eoj of ['001101','001201','013001','013301','013401','013501','026301','026b01','026f01','027201','027301','027b01','029001','029101','02a601','05fd01'])expect(platform.matterSupportedClass(eoj)).toBe(true);
+    expect(platform.matterSupportedClass('026501')).toBe(false);
+    for(const eoj of ['027901','028101','028201','028701','028801'])expect(platform.matterSupportedClass(eoj)).toBe(false);
+  });
+
+  test('registers and updates a Matter light independently from HomeKit',()=>{
+    const instance=Object.create(EchonetLitePlatform.prototype) as any;
+    const updateAccessoryState=jest.fn(()=>Promise.resolve());
+    const registerPlatformAccessories=jest.fn();
+    instance.config={deviceSettings:[{id:'192.168.1.2-029001',enabled:true,name:'照明'}]};
+    instance.matterCached=new Map();
+    instance.api={hap:{uuid:{generate:(value:string)=>value}},matter:{deviceTypes:{DimmableLight:'dimmable-light'},registerPlatformAccessories,updateAccessoryState}};
+    instance.logger={info:jest.fn(),debug:jest.fn()};
+    instance.mra={device:()=>undefined,decode:()=>undefined};
+    instance.applyMatter('192.168.1.2-029001','192.168.1.2','029001',{});
+    expect(registerPlatformAccessories).toHaveBeenCalledTimes(1);
+    const accessory=registerPlatformAccessories.mock.calls[0][2][0];
+    expect(accessory).toMatchObject({displayName:'照明',deviceType:'dimmable-light',clusters:{onOff:{onOff:false}}});
+    expect(updateAccessoryState).not.toHaveBeenCalled();
+  });
+
   test('requires explicit opt-in before publishing a discovered device',()=>{
     platform.config={meterDisplayMode:'appleHome',deviceSettings:[]};
     expect(platform.allowed('192.168.1.2-013001','192.168.1.2','013001')).toBe(false);

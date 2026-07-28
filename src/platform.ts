@@ -13,7 +13,9 @@ type RInfo=EL.RInfo;
 /** Direct ECHONET Lite platform. MQTT is intentionally not involved. */
 export class EchonetLitePlatform implements DynamicPlatformPlugin {
   private readonly cached=new Map<string,PlatformAccessory>();
+  private readonly matterCached=new Map<string,any>();
   private readonly pendingRemoval:PlatformAccessory[]=[];
+  private readonly pendingMatterRemoval:any[]=[];
   private readonly meterState=new Map<string,{coefficient:number;unit:number}>();
   private readonly logger:PluginLogger;
   private readonly mra=new MraRepository();
@@ -39,6 +41,12 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     if(id&&!this.allowed(id,a.context.ip,a.context.eoj)){this.pendingRemoval.push(a);return;}
     this.cached.set(a.UUID,a);
   }
+  configureMatterAccessory(a:any){
+    const id=String(a?.context?.id??'');
+    const ip=String(a?.context?.ip??''),eoj=String(a?.context?.eoj??'');
+    if(!id||!this.allowed(id,ip,eoj)||!this.matterSupportedClass(eoj)){this.pendingMatterRemoval.push(a);return;}
+    this.matterCached.set(a.UUID,a);
+  }
   private async start(){
     try{
       // The running child bridge has now loaded the saved configuration.
@@ -48,6 +56,11 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
         this.api.unregisterPlatformAccessories(PLUGIN_NAME,PLATFORM_NAME,this.pendingRemoval);
         this.logger.info(`設定により${this.pendingRemoval.length}台をHomeKitから除外しました`);
         this.pendingRemoval.length=0;
+      }
+      if(this.pendingMatterRemoval.length&&(this.api as any).matter){
+        (this.api as any).matter.unregisterPlatformAccessories(PLUGIN_NAME,PLATFORM_NAME,this.pendingMatterRemoval);
+        this.logger.info(`設定により${this.pendingMatterRemoval.length}台をMatterから除外しました`);
+        this.pendingMatterRemoval.length=0;
       }
       this.logger.info('ECHONET Lite直接通信を開始します（UDP/3610）');
       EL.initialize(['05ff01'],((r:RInfo,e:ElData|null,error?:Error|null)=>{
@@ -120,7 +133,8 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     const id=`${r.address}-${e.SEOJ}`;
     if(!this.allowed(id,r.address,e.SEOJ)){this.logger.debug(`機器をフィルターにより除外しました: ${r.address} / ${e.SEOJ}`);return;}
     this.logger.debug(`ECHONET Lite機器を検出しました: ${r.address} / ${e.SEOJ}`);
-    const a=this.accessory(id,r.address,e.SEOJ);this.cacheDetectedProperties(a,id);this.apply(a,r.address,e.SEOJ,this.selectedDetails(id,e.DETAILs));
+    const details=this.selectedDetails(id,e.DETAILs);
+    const a=this.accessory(id,r.address,e.SEOJ);this.cacheDetectedProperties(a,id);this.apply(a,r.address,e.SEOJ,details);this.applyMatter(id,r.address,e.SEOJ,details);
   }
   private recordDevice(ip:string,eoj:string,details:Record<string,string>){
     const id=`${ip}-${eoj}`,existing=this.discovered.get(id),current=existing??{id,ip,eoj,name:this.className(eoj),properties:{}};
@@ -179,7 +193,8 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
       if(eoj.toLowerCase()==='0ef001')continue;
       this.recordDevice(ip,eoj,details);
       const id=`${ip}-${eoj}`;if(!this.allowed(id,ip,eoj))continue;
-      const a=this.accessory(id,ip,eoj);this.cacheDetectedProperties(a,id);this.apply(a,ip,eoj,this.selectedDetails(id,details));
+      const selected=this.selectedDetails(id,details);
+      const a=this.accessory(id,ip,eoj);this.cacheDetectedProperties(a,id);this.apply(a,ip,eoj,selected);this.applyMatter(id,ip,eoj,selected);
     }
   }
   private allowed(id:string,ip:string,eoj:string){
@@ -202,6 +217,72 @@ export class EchonetLitePlatform implements DynamicPlatformPlugin {
     return a;
   }
   private className(eoj:string){const device=this.mra.device(eoj);return device?.className.ja??device?.className.en??`ECHONET Lite ${eoj}`;}
+  private matterSupportedClass(eoj:string){return new Set(['0011','0012','0130','0133','0134','0135','0263','026b','026f','0272','0273','027b','0290','0291','02a6','05fd']).has(eoj.slice(0,4).toLowerCase());}
+  private matterAccessory(id:string,ip:string,eoj:string){
+    const matter=(this.api as any).matter;
+    if(!matter||!this.matterSupportedClass(eoj))return undefined;
+    const uuid=this.api.hap.uuid.generate(`echonet-lite:matter:${id}`),cls=eoj.slice(0,4).toLowerCase();
+    const setting=this.config.deviceSettings?.find(x=>x.id===id),displayName=setting?.name?.trim()||this.className(eoj);
+    let accessory=this.matterCached.get(uuid);
+    const onOffHandlers={on:async()=>this.setMra(ip,eoj,'operationStatus','true'),off:async()=>this.setMra(ip,eoj,'operationStatus','false')};
+    const handlers=cls==='0290'||cls==='0291'?{onOff:onOffHandlers,levelControl:{moveToLevel:async(args:any)=>this.setMra(ip,eoj,'lightLevel',this.clamp(Math.round(Number(args?.level??0)*100/254),0,100))}}:
+      cls==='0133'||cls==='0134'||cls==='0135'||cls==='05fd'?{onOff:onOffHandlers}:
+        cls==='0273'?{onOff:{on:async()=>this.setMra(ip,eoj,'operationSetting','ventilation'),off:async()=>this.setMra(ip,eoj,'operationSetting','stop')}}:
+          cls==='026b'||cls==='0272'?{onOff:{on:async()=>this.setMra(ip,eoj,'automaticBathOperation','true'),off:async()=>this.setMra(ip,eoj,'automaticBathOperation','false')}}:
+            cls==='02a6'?{onOff:{on:async()=>this.setMra(ip,eoj,'automaticWaterHeating','auto'),off:async()=>this.setMra(ip,eoj,'automaticWaterHeating','manualNotHeating')}}:
+        cls==='0130'?{thermostat:{systemModeChange:async(args:any)=>{const mode=Number(args?.systemMode);if(mode===0)this.setMra(ip,eoj,'operationStatus','false');else{this.setMra(ip,eoj,'operationStatus','true');this.setMra(ip,eoj,'operationMode',mode===3?'cooling':mode===4?'heating':'auto');}},occupiedCoolingSetpointChange:async(args:any)=>this.setMra(ip,eoj,'targetTemperature',Number(args?.occupiedCoolingSetpoint)/100),occupiedHeatingSetpointChange:async(args:any)=>this.setMra(ip,eoj,'targetTemperature',Number(args?.occupiedHeatingSetpoint)/100)}}:
+          cls==='026f'?{doorLock:{lockDoor:async()=>this.set(ip,eoj,'e0','41'),unlockDoor:async()=>this.set(ip,eoj,'e0','42')}}:
+            cls==='0263'?{windowCovering:{upOrOpen:async()=>this.setMra(ip,eoj,'openCloseOperation','open'),downOrClose:async()=>this.setMra(ip,eoj,'openCloseOperation','close'),stopMotion:async()=>this.setMra(ip,eoj,'openCloseOperation','stop'),goToLiftPercentage:async(args:any)=>this.setMra(ip,eoj,'degreeOfOpening',this.clamp(Math.round(Number(args?.liftPercent100thsValue??args)/100),0,100))}}:
+              cls==='027b'?{thermostat:{systemModeChange:async(args:any)=>this.setMra(ip,eoj,'operationStatus',String(Number(args?.systemMode)!==0)),occupiedHeatingSetpointChange:async(args:any)=>this.setMra(ip,eoj,'targetTemperature1',Number(args?.occupiedHeatingSetpoint)/100)}}:{};
+    if(accessory){accessory.handlers=handlers;return accessory;}
+    const deviceType=cls==='0011'?matter.deviceTypes.TemperatureSensor:cls==='0012'?matter.deviceTypes.HumiditySensor:cls==='0130'?matter.deviceTypes.RoomAirConditioner:cls==='027b'?matter.deviceTypes.Thermostat:cls==='0263'?matter.deviceTypes.WindowCovering:cls==='026f'?matter.deviceTypes.DoorLock:cls==='0290'||cls==='0291'?matter.deviceTypes.DimmableLight:cls==='0133'||cls==='0134'||cls==='0135'||cls==='0273'?matter.deviceTypes.Fan:matter.deviceTypes.OnOffSwitch;
+    const clusters=cls==='0011'?{temperatureMeasurement:{measuredValue:null}}:cls==='0012'?{relativeHumidityMeasurement:{measuredValue:null}}:cls==='0130'?{thermostat:{externalMeasuredIndoorTemperature:2500,occupiedCoolingSetpoint:2600,occupiedHeatingSetpoint:2000,minHeatSetpointLimit:700,maxHeatSetpointLimit:3000,minCoolSetpointLimit:1600,maxCoolSetpointLimit:3200,minSetpointDeadBand:25,systemMode:0,controlSequenceOfOperation:4}}:cls==='027b'?{thermostat:{externalMeasuredIndoorTemperature:2000,occupiedHeatingSetpoint:2500,minHeatSetpointLimit:500,maxHeatSetpointLimit:5000,systemMode:0,controlSequenceOfOperation:2}}:cls==='0263'?{windowCovering:{currentPositionLiftPercent100ths:null,targetPositionLiftPercent100ths:null}}:cls==='026f'?{doorLock:{lockState:null,lockType:0,actuatorEnabled:true}}:cls==='0290'||cls==='0291'?{onOff:{onOff:false},levelControl:{currentLevel:1,minLevel:1,maxLevel:254}}:cls==='0133'||cls==='0134'||cls==='0135'||cls==='0273'?{onOff:{onOff:false},fanControl:{percentCurrent:0,percentSetting:0}}:{onOff:{onOff:false}};
+    accessory={UUID:uuid,displayName,deviceType,manufacturer:'ECHONET Lite',model:`EOJ ${eoj.slice(0,4).toUpperCase()}`,serialNumber:id,context:{id,ip,eoj},clusters,handlers};
+    matter.registerPlatformAccessories(PLUGIN_NAME,PLATFORM_NAME,[accessory]);
+    this.matterCached.set(uuid,accessory);
+    this.logger.info(`Matter機器を追加しました: ${ip} / ${eoj}`);
+    return accessory;
+  }
+  private applyMatter(id:string,ip:string,eoj:string,d:Record<string,string>){
+    const matter=(this.api as any).matter;if(!matter||!this.matterSupportedClass(eoj))return;
+    const accessory=this.matterAccessory(id,ip,eoj);if(!accessory)return;
+    const decoded=this.decodedDetails(eoj,d),cls=eoj.slice(0,4).toLowerCase();
+    const update=(cluster:string,state:Record<string,unknown>)=>void Promise.resolve(matter.updateAccessoryState(accessory.UUID,cluster,state)).catch((error:unknown)=>this.logger.debug(`Matter状態更新に失敗しました: ${id}: ${String(error)}`));
+    if(cls==='0011'){
+      const value=this.finiteNumber(decoded.value);if(value!==undefined)update('temperatureMeasurement',{measuredValue:Math.round(value*100)});
+    }else if(cls==='0012'){
+      const value=this.finiteNumber(decoded.value);if(value!==undefined)update('relativeHumidityMeasurement',{measuredValue:Math.round(this.clamp(value,0,100)*100)});
+    }else if(cls==='0130'){
+      const state:Record<string,unknown>={};
+      const room=this.finiteNumber(decoded.roomTemperature),target=this.finiteNumber(decoded.targetTemperature);
+      if(room!==undefined)state.externalMeasuredIndoorTemperature=Math.round(room*100);
+      if(target!==undefined){state.occupiedCoolingSetpoint=Math.round(target*100);state.occupiedHeatingSetpoint=Math.round(target*100);}
+      if('operationStatus'in decoded||'operationMode'in decoded){const enabled='operationStatus'in decoded?(decoded.operationStatus===true||decoded.operationStatus==='true'):true;state.systemMode=!enabled?0:decoded.operationMode==='cooling'?3:decoded.operationMode==='heating'?4:1;}
+      if(Object.keys(state).length)update('thermostat',state);
+    }else if(cls==='026f'){
+      if('e0'in d)update('doorLock',{lockState:d.e0.toLowerCase()==='41'?1:2});
+    }else if(cls==='0263'){
+      const state:Record<string,unknown>={},degree=this.finiteNumber(decoded.degreeOfOpening);
+      if(degree!==undefined)state.currentPositionLiftPercent100ths=Math.round(this.clamp(degree,0,100)*100);
+      if(decoded.openCloseStatus==='fullyOpen'){state.currentPositionLiftPercent100ths=10000;state.targetPositionLiftPercent100ths=10000;}
+      else if(decoded.openCloseStatus==='fullyClosed'){state.currentPositionLiftPercent100ths=0;state.targetPositionLiftPercent100ths=0;}
+      if(Object.keys(state).length)update('windowCovering',state);
+    }else if(cls==='027b'){
+      const state:Record<string,unknown>={},room=this.finiteNumber(decoded.measuredRoomTemperature),floor=this.finiteNumber(decoded.measuredFloorTemperature),target=this.finiteNumber(decoded.targetTemperature1);
+      if(room!==undefined||floor!==undefined)state.externalMeasuredIndoorTemperature=Math.round((room??floor!)*100);
+      if(target!==undefined)state.occupiedHeatingSetpoint=Math.round(target*100);
+      if('operationStatus'in decoded)state.systemMode=decoded.operationStatus===true||decoded.operationStatus==='true'?4:0;
+      if(Object.keys(state).length)update('thermostat',state);
+    }else{
+      if('operationStatus'in decoded){const on=decoded.operationStatus===true||decoded.operationStatus==='true';update('onOff',{onOff:on});if(cls==='0133'||cls==='0134'||cls==='0135')update('fanControl',{percentCurrent:on?100:0,percentSetting:on?100:0});}
+      if(cls==='0273'&&'operationSetting'in decoded){const on=decoded.operationSetting!=='stop';update('onOff',{onOff:on});update('fanControl',{percentCurrent:on?100:0,percentSetting:on?100:0});}
+      if((cls==='026b'||cls==='0272')&&'automaticBathOperation'in decoded)update('onOff',{onOff:decoded.automaticBathOperation===true||decoded.automaticBathOperation==='true'});
+      if(cls==='02a6'&&'automaticWaterHeating'in decoded)update('onOff',{onOff:decoded.automaticWaterHeating!=='manualNotHeating'});
+      if(cls==='0290'||cls==='0291'){
+        const level=this.finiteNumber(decoded.lightLevel);if(level!==undefined)update('levelControl',{currentLevel:this.clamp(Math.round(level*254/100),1,254)});
+      }
+    }
+  }
   private service(a:PlatformAccessory,eoj:string):Service{
     const S=this.api.hap.Service;const cls=eoj.slice(0,4).toLowerCase();
     const name=a.displayName||this.className(eoj);
