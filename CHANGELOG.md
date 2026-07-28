@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.4
+
+- Added a detected-device history clear action that removes persisted discovery results and per-device choices without allowing Homebridge accessory-cache fallbacks to restore stale devices.
+- Added per-device removal for equipment that has been decommissioned; a later live rediscovery automatically restores it.
+- A newly detected live ECHONET Lite device automatically ends the cleared-history state.
+
 ## 0.7.3
 
 - Clarified how HEMS commonly uses ECHONET Lite and why some HEMS-compatible devices may be discoverable by this plugin.
