@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="stylesheet" href="style.css?v=0.7.5">
+  <link rel="stylesheet" href="style.css?v=0.7.6">
 </head>
 <body>
   <div class="elsp-shell">
@@ -93,7 +93,7 @@
     deviceList.addEventListener('change',event=>{const input=event.target,index=Number(input.dataset.device),device=discoveredDevices[index];if(!device)return;const value=setting(device);if(input.dataset.role==='enabled')value.enabled=input.checked;else if(input.dataset.role==='name')value.name=input.value;else if(input.dataset.property){value.properties=value.properties||[];value.properties=input.checked?[...new Set([...value.properties,input.dataset.property])]:value.properties.filter(x=>x!==input.dataset.property);}update().catch(e=>homebridge.toast.error(String(e)));});
     deviceList.addEventListener('click',async event=>{
       const button=event.target.closest('button[data-role="remove"]');if(!button)return;
-      const device=discoveredDevices[Number(button.dataset.device)];if(!device||!window.confirm(text[effective()].removeConfirm))return;
+      const device=discoveredDevices[Number(button.dataset.device)];if(!device)return;
       const previousDevices=discoveredDevices;
       const previousSettings=[...(baseConfig.deviceSettings||[])];
       locallyRemovedIds.add(String(device.id).toLowerCase());
@@ -119,7 +119,6 @@
       homebridge.toast.info(text[effective()].restartNotice);
     });
     clearDevices.addEventListener('click',async()=>{
-      if(!window.confirm(text[effective()].clearConfirm))return;
       try{
         const result=await request('/clear-devices',4000);
         locallyRemovedIds.clear();
