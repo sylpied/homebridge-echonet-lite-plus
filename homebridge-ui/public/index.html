@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="stylesheet" href="style.css?v=0.7.4">
+  <link rel="stylesheet" href="style.css?v=0.7.5">
 </head>
 <body>
   <div class="elsp-shell">
@@ -47,6 +47,7 @@
     const requestWithBody=(route,body,timeout=3000)=>Promise.race([homebridge.request(route,body),new Promise((_,reject)=>setTimeout(()=>reject(new Error(`${route} timed out`)),timeout))]);
     const defaults={platform:'ECHONETLitePlus',name:'ECHONET Lite',language:'auto',autoDiscovery:true,knownDeviceIps:[],includeDevices:[],excludeDevices:[],deviceSettings:[],meterDisplayMode:'appleHome',pollInterval:60,logLevel:'info'};
     let discoveredDevices=[];
+    const locallyRemovedIds=new Set();
     let baseConfig={};
     let needsRestart=false;
     async function load(){
@@ -78,7 +79,7 @@
       const cachedDiscovery=(cached||[]).flatMap(a=>Array.isArray(a.context?.echonetDiscoveredDevices)?a.context.echonetDiscoveredDevices:[]);
       const merged=new Map();
       const fallback=includeFallback?[...configured,...cachedDevices,...cachedDiscovery]:[];
-      for(const device of [...fallback,...(Array.isArray(liveDevices)?liveDevices:[])])if(!removedIds.has(device.id))merged.set(device.id,{...(merged.get(device.id)||{}),...device,properties:{...(merged.get(device.id)?.properties||{}),...(device.properties||{})}});
+      for(const device of [...fallback,...(Array.isArray(liveDevices)?liveDevices:[])])if(!removedIds.has(String(device.id).toLowerCase())&&!locallyRemovedIds.has(String(device.id).toLowerCase()))merged.set(device.id,{...(merged.get(device.id)||{}),...device,properties:{...(merged.get(device.id)?.properties||{}),...(device.properties||{})}});
       discoveredDevices=[...merged.values()];
       renderDevices();
     }
@@ -86,19 +87,27 @@
       let result;
       try{result=await request('/devices',4000);}catch(error){console.warn(error);if(retry)setTimeout(()=>loadDevices(false).catch(e=>console.warn(e)),5000);}
       const liveDevices=Array.isArray(result)?result:Array.isArray(result?.devices)?result.devices:Array.isArray(result?.data?.devices)?result.data.devices:[];
-      const removedIds=new Set(Array.isArray(result?.removedIds)?result.removedIds:[]);
-      await mergeDevices(liveDevices.filter(device=>!removedIds.has(device.id)),result?.cleared!==true,removedIds);
+      const removedIds=new Set((Array.isArray(result?.removedIds)?result.removedIds:[]).map(id=>String(id).toLowerCase()));
+      await mergeDevices(liveDevices.filter(device=>!removedIds.has(String(device.id).toLowerCase())),result?.cleared!==true,removedIds);
     }
     deviceList.addEventListener('change',event=>{const input=event.target,index=Number(input.dataset.device),device=discoveredDevices[index];if(!device)return;const value=setting(device);if(input.dataset.role==='enabled')value.enabled=input.checked;else if(input.dataset.role==='name')value.name=input.value;else if(input.dataset.property){value.properties=value.properties||[];value.properties=input.checked?[...new Set([...value.properties,input.dataset.property])]:value.properties.filter(x=>x!==input.dataset.property);}update().catch(e=>homebridge.toast.error(String(e)));});
     deviceList.addEventListener('click',async event=>{
       const button=event.target.closest('button[data-role="remove"]');if(!button)return;
       const device=discoveredDevices[Number(button.dataset.device)];if(!device||!window.confirm(text[effective()].removeConfirm))return;
+      const previousDevices=discoveredDevices;
+      const previousSettings=[...(baseConfig.deviceSettings||[])];
+      locallyRemovedIds.add(String(device.id).toLowerCase());
+      baseConfig.deviceSettings=previousSettings.filter(value=>String(value.id).toLowerCase()!==String(device.id).toLowerCase());
+      discoveredDevices=previousDevices.filter(value=>String(value.id).toLowerCase()!==String(device.id).toLowerCase());
+      renderDevices();
       try{
         await requestWithBody('/remove-device',{id:device.id},4000);
-        baseConfig.deviceSettings=(baseConfig.deviceSettings||[]).filter(value=>value.id!==device.id);
-        discoveredDevices=discoveredDevices.filter(value=>value.id!==device.id);
         await update();markRestartRequired();renderDevices();homebridge.toast.success(text[effective()].removeDone);
-      }catch(e){homebridge.toast.error(String(e));}
+      }catch(e){
+        locallyRemovedIds.delete(String(device.id).toLowerCase());
+        baseConfig.deviceSettings=previousSettings;discoveredDevices=previousDevices;renderDevices();
+        homebridge.toast.error(String(e));
+      }
     });
     rediscover.addEventListener('click',async()=>{
       if(needsRestart){homebridge.toast.error(text[effective()].restartRequiredToast);return;}
@@ -113,6 +122,7 @@
       if(!window.confirm(text[effective()].clearConfirm))return;
       try{
         const result=await request('/clear-devices',4000);
+        locallyRemovedIds.clear();
         baseConfig.deviceSettings=[];
         discoveredDevices=[];
         await update();markRestartRequired();renderDevices();
@@ -120,7 +130,7 @@
         if(result?.devices?.length)await mergeDevices(result.devices,false);
       }catch(e){homebridge.toast.error(String(e));}
     });
-    homebridge.addEventListener('echonet-devices',event=>mergeDevices(event.data?.devices,event.data?.cleared!==true,new Set(Array.isArray(event.data?.removedIds)?event.data.removedIds:[])).catch(e=>console.warn(e)));
+    homebridge.addEventListener('echonet-devices',event=>mergeDevices(event.data?.devices,event.data?.cleared!==true,new Set((Array.isArray(event.data?.removedIds)?event.data.removedIds:[]).map(id=>String(id).toLowerCase()))).catch(e=>console.warn(e)));
     homebridge.addEventListener('echonet-settings-status',event=>{needsRestart=Boolean(event.data?.restartRequired);render();});
     homebridge.showSpinner();load().catch(e=>{homebridge.hideSpinner();render();renderDevices();homebridge.toast.error(String(e));});
   </script>
